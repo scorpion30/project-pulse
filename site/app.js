@@ -24,11 +24,11 @@ async function api(action,body,tries){
   if(!j.ok){if(/sign in/i.test(j.error||"")&&action!=="login"&&action!=="signup")signOut(true);throw new Error(j.error||"Something went wrong")}
   return j;
 }
-let saving=0;
+let saving=0, WRITES_N=0;
 function busy(d){saving+=d;const el=document.getElementById("saving");if(el)el.textContent=saving>0?"Saving…":"Saved"}
 async function send(action,body,okMsg){
   busy(1);
-  try{const j=await api(action,body);busy(-1);if(okMsg)toast(okMsg);return j}
+  try{const j=await api(action,body);WRITES_N++;busy(-1);if(okMsg)toast(okMsg);return j}
   catch(e){busy(-1);toast(e.message);await reload();throw e}
 }
 
@@ -156,10 +156,12 @@ async function boot(){
   TEAM=TEAMS.find(t=>t.id===store.get("pulse-team"))||TEAMS[0];
   await reload();
 }
-async function reload(){
+async function reload(depth){
   if(!TOKEN||!TEAM)return;
   try{
+    const v=WRITES_N;
     const j=await api("load",{teamId:TEAM.id,projectId:S.cur});
+    if(v!==WRITES_N||saving>0){if((depth||0)<3)return reload((depth||0)+1);return}
     PEOPLE=j.members;ROLE=j.role;LOGO=j.team.logo||"";TEAM.name=j.team.name||TEAM.name;PROJECTS=j.projects;INVITES=j.invites||[];S.cur=j.projectId;
     S.tasks=j.tasks||[];S.updates=j.updates||[];S.ms=j.milestones||[];S.log=j.log||[];
     store.set("pulse-team",TEAM.id);store.set("pulse-project",S.cur);render();checkWins();
@@ -525,9 +527,9 @@ const fit=(l,maxW,maxH)=>{const r=Math.min(maxW/l.w,maxH/l.h,1);return{w:Math.ro
 function dShort(ms){return new Date(ms).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
 function tShort(ms){return new Date(ms).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
 async function exportPDF(M){
-  await lib("pdf");const el=document.getElementById("report");el.classList.add("printing");
-  try{await html2pdf().set({margin:[10,10,12,10],filename:fileBase(M)+".pdf",image:{type:"jpeg",quality:.96},html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff"},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr",".rtiles",".rhead","h3"]}}).from(el).save()}
-  finally{el.classList.remove("printing")}
+  await lib("pdf");const el=document.getElementById("report"),sy=window.scrollY;window.scrollTo(0,0);el.classList.add("printing");
+  try{await html2pdf().set({margin:[10,10,12,10],filename:fileBase(M)+".pdf",image:{type:"jpeg",quality:.96},html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",scrollX:0,scrollY:0},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr",".rtiles",".rhead","h3"]}}).from(el).save()}
+  finally{el.classList.remove("printing");window.scrollTo(0,sy)}
 }
 async function exportXLSX(M){
   await lib("xlsx");const wb=new ExcelJS.Workbook();wb.creator="Project Pulse";const L=await logoInfo();
