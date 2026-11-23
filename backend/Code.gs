@@ -7,7 +7,7 @@
 const SCHEMA = {
   Users:      ['id','name','email','passHash','salt','createdAt'],
   Sessions:   ['token','userId','createdAt','expiresAt'],
-  Teams:      ['id','name','createdBy','createdAt'],
+  Teams:      ['id','name','createdBy','createdAt','logo'],
   Members:    ['teamId','userId','role','color','joinedAt'],
   Invites:    ['code','teamId','role','createdBy','createdAt','usedBy'],
   Projects:   ['id','teamId','name','createdBy','createdAt'],
@@ -70,6 +70,7 @@ function save_(name, obj) {
   const h = SCHEMA[name];
   sheet_(name).getRange(obj._row, 1, 1, h.length).setNumberFormat('@').setValues([h.map(k => cell_(obj[k]))]);
 }
+function remove_(name, obj) { sheet_(name).deleteRow(obj._row); }
 function strip_(o) { const c = Object.assign({}, o); delete c._row; return c; }
 function id_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 10); }
 function now_() { return Date.now(); }
@@ -177,7 +178,7 @@ const ACTIONS = {
       const u = users.find(x => x.id === m.userId) || {}; return {id: m.userId, name: u.name || 'Someone', mgr: m.role === 'mgr', color: m.color};
     });
     const projects = rows_('Projects').filter(p => p.teamId === teamId).map(p => ({id: p.id, name: p.name}));
-    const out = {team: {id: teamId, name: team ? team.name : ''}, role: me.role, members, projects, invites: []};
+    const out = {team: {id: teamId, name: team ? team.name : '', logo: team ? String(team.logo || '') : ''}, role: me.role, members, projects, invites: []};
     if (me.role === 'mgr') out.invites = rows_('Invites').filter(i => i.teamId === teamId && !i.usedBy).map(i => ({code: i.code, role: i.role}));
     const pid = projects.some(p => p.id === b.projectId) ? b.projectId : (projects[0] || {}).id;
     out.projectId = pid || null;
@@ -264,10 +265,92 @@ const ACTIONS = {
     for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
     insert_('Invites', {code, teamId: b.teamId, role: b.role === 'mgr' ? 'mgr' : 'team', createdBy: user.id, createdAt: now_(), usedBy: ''});
     return {code};
+  },
+  editMe(b, user) {
+    const name = clean_(b.name, 60); if (!name) throw new Error('Type your name');
+    const u = rows_('Users').find(x => x.id === user.id); u.name = name; save_('Users', u);
+    return {name};
+  },
+  editTeam(b, user) {
+    const me = member_(user.id, b.teamId); if (me.role !== 'mgr') throw new Error('Only managers can change team settings');
+    const t = rows_('Teams').find(x => x.id === b.teamId);
+    if (b.name !== undefined) { const n = clean_(b.name, 80); if (!n) throw new Error('Type the team name'); t.name = n; }
+    if (b.logo !== undefined) {
+      const logo = String(b.logo || '');
+      if (logo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo)) throw new Error('Logo must be a PNG or JPG image');
+      if (logo.length > 48000) throw new Error('Logo is too big. Try a smaller image');
+      t.logo = logo;
+    }
+    save_('Teams', t);
+    return {team: {id: t.id, name: t.name, logo: String(t.logo || '')}};
+  },
+  renameProject(b, user) {
+    const ctx = project_(user, b.projectId); needMgr_(ctx);
+    const name = clean_(b.name, 100); if (!name) throw new Error('Give the project a name');
+    const old = ctx.p.name; ctx.p.name = name; save_('Projects', ctx.p);
+    log_(ctx.p.id, user.id, 'renamed the project from “' + old + '” to “' + name + '”');
+    return {};
+  },
+  editTask(b, user) {
+    const t = rows_('Tasks').find(x => x.id === b.id); if (!t) throw new Error('Task not found');
+    const ctx = project_(user, t.projectId); needMgr_(ctx);
+    const team = rows_('Members').filter(m => m.teamId === ctx.p.teamId).map(m => m.userId);
+    if (b.to !== undefined && !team.includes(b.to)) throw new Error('That person is not on this team');
+    const changes = [];
+    [['title', 300], ['to', 20], ['due', 10], ['about', 80], ['ms', 20]].forEach(([k, max]) => {
+      if (b[k] === undefined) return;
+      const v = clean_(b[k], max); if (k === 'title' && !v) throw new Error('The task needs a title');
+      if (String(t[k] || '') !== v) { changes.push(k); t[k] = v; }
+    });
+    if (b.deliv !== undefined) t.deliv = !!b.deliv;
+    if (changes.includes('to')) { t.seenAt = ''; if (t.status === 'stuck') t.status = 'doing'; }
+    save_('Tasks', t);
+    if (b.logTxt && changes.length) log_(t.projectId, user.id, b.logTxt);
+    return {task: taskOut_(t)};
+  },
+  deleteTask(b, user) {
+    const t = rows_('Tasks').find(x => x.id === b.id); if (!t) throw new Error('Task not found');
+    const ctx = project_(user, t.projectId); needMgr_(ctx);
+    remove_('Tasks', t); log_(t.projectId, user.id, 'deleted the task “' + t.title + '”');
+    return {};
+  },
+  editUpdate(b, user) {
+    const u = rows_('Updates').find(x => x.id === b.id); if (!u) throw new Error('Update not found');
+    const ctx = project_(user, u.projectId); needMgr_(ctx);
+    const text = clean_(b.text, 2000); if (!text) throw new Error('The update cannot be empty');
+    const old = u.text; u.text = text; u.about = clean_(b.about, 80); save_('Updates', u);
+    log_(u.projectId, user.id, 'edited an update: “' + String(old).slice(0, 120) + '” → “' + text.slice(0, 200) + '”');
+    return {update: updOut_(u)};
+  },
+  deleteUpdate(b, user) {
+    const u = rows_('Updates').find(x => x.id === b.id); if (!u) throw new Error('Update not found');
+    const ctx = project_(user, u.projectId); needMgr_(ctx);
+    remove_('Updates', u); log_(u.projectId, user.id, 'deleted an update: “' + String(u.text).slice(0, 200) + '”');
+    return {};
+  },
+  deleteMilestone(b, user) {
+    const m = rows_('Milestones').find(x => x.id === b.id); if (!m) throw new Error('Delivery not found');
+    const ctx = project_(user, m.projectId); needMgr_(ctx);
+    rows_('Tasks').filter(t => t.ms === m.id).forEach(t => { t.ms = ''; save_('Tasks', t); });
+    remove_('Milestones', m); log_(m.projectId, user.id, 'removed the delivery ' + m.name + ' (' + m.date + ')');
+    return {};
+  },
+  report(b, user) {
+    const me = member_(user.id, b.teamId);
+    const projects = rows_('Projects').filter(p => p.teamId === b.teamId);
+    const ids = b.projectId ? projects.filter(p => p.id === b.projectId).map(p => p.id) : projects.map(p => p.id);
+    if (b.projectId && !ids.length) throw new Error('Project not found');
+    const from = Number(b.from) || 0, to = Number(b.to) || now_();
+    const inRange = x => { const t = num_(x); return t !== null && t >= from && t <= to; };
+    const log = rows_('Log').filter(l => ids.includes(l.projectId) && inRange(l.at)).map(l => ({at: num_(l.at), projectId: l.projectId, who: l.who, txt: l.txt}));
+    const tasks = rows_('Tasks').filter(t => ids.includes(t.projectId)).map(t => Object.assign(taskOut_(t), {projectId: t.projectId}));
+    const updates = rows_('Updates').filter(u => ids.includes(u.projectId) && inRange(u.at)).map(u => Object.assign(updOut_(u), {projectId: u.projectId}));
+    const milestones = rows_('Milestones').filter(m => ids.includes(m.projectId)).map(m => Object.assign(msOut_(m), {projectId: m.projectId}));
+    return {log, tasks, updates, milestones, projects: projects.filter(p => ids.includes(p.id)).map(p => ({id: p.id, name: p.name}))};
   }
 };
 const PUBLIC = {signup: 1, login: 1};
-const WRITES = {signup:1, login:1, logout:1, joinTeam:1, createProject:1, createTasks:1, taskAction:1, postUpdate:1, updateAction:1, saveMilestone:1, setRole:1, createInvite:1};
+const WRITES = {signup:1, login:1, logout:1, joinTeam:1, createProject:1, createTasks:1, taskAction:1, postUpdate:1, updateAction:1, saveMilestone:1, setRole:1, createInvite:1, editMe:1, editTeam:1, renameProject:1, editTask:1, deleteTask:1, editUpdate:1, deleteUpdate:1, deleteMilestone:1};
 
 /* ---------- web entry points ---------- */
 function doPost(e) {

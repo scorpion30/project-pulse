@@ -278,3 +278,52 @@ input[type=text],input[type=date],select,textarea{font:inherit;border:1px solid 
 .trophies{display:flex;flex-wrap:wrap;gap:8px}
 .trophy{display:flex;flex-direction:column;align-items:center;gap:2px;width:84px;padding:8px 4px;border-radius:12px;background:color-mix(in srgb,var(--sun,#f5b100) 14%,transparent);text-align:center}
 .trophy span{font-size:30px}.trophy b{font-size:12px;line-height:1.2}.trophy small{font-size:11px;color:var(--muted)}
+
+/* editing */
+.editbox{display:flex;flex-direction:column;gap:8px;padding:10px;border:2px dashed var(--accent);border-radius:12px;background:var(--card);margin:4px 0}
+.editbox label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--muted);flex:1;min-width:0}
+.editbox input,.editbox select,.editbox textarea{font:inherit;font-size:14px;color:var(--ink);padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);width:100%;box-sizing:border-box}
+.editbox .erow{display:flex;gap:8px;flex-wrap:wrap}
+.editbox .erow label{min-width:140px}
+.editbox .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+.btn.danger{background:transparent;color:var(--red,#d93025);border:1px solid currentColor}
+.btn.danger:hover{background:var(--red,#d93025);color:#fff}
+.linkbtn.edl{font-size:12px;opacity:.75;padding:2px 4px;white-space:nowrap}
+.linkbtn.edl:hover{opacity:1}
+.mname .linkbtn.edl{vertical-align:middle}
+.inl{display:flex;gap:6px;align-items:center}
+.inl input{flex:1;min-width:0}
+.logobox{min-height:70px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:12px;padding:10px;margin-bottom:10px;background:#fff}
+.logobox img{max-height:80px;max-width:100%;object-fit:contain}
+
+/* report */
+.rcontrols{display:flex;flex-direction:column;gap:12px}
+.rbtns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.rwrap{margin-top:14px;overflow-x:auto}
+.report{background:#fff;color:#141b2b;border-radius:14px;box-shadow:var(--shadow);padding:32px 34px;max-width:900px;margin:0 auto;font-family:Figtree,Arial,sans-serif;font-size:13px}
+.report.printing{box-shadow:none;border-radius:0;padding:0;max-width:none}
+.rhead{display:flex;gap:20px;align-items:center;border-bottom:3px solid #141b2b;padding-bottom:16px;margin-bottom:18px}
+.rlogo{max-height:64px;max-width:200px;object-fit:contain}
+.rteam{font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase}
+.rtitle h2{font-family:"Bricolage Grotesque",Arial,sans-serif;font-size:24px;margin:2px 0 4px;color:#141b2b}
+.rmeta{color:#6b7280;font-size:12px}
+.rtiles{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px}
+.rtile{border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center}
+.rtile b{display:block;font-size:22px;font-family:"Bricolage Grotesque",Arial,sans-serif}
+.rtile span{font-size:11px;color:#6b7280}
+.rtile.ok b{color:#0f9d8c}.rtile.bad b{color:#d93025}
+.report h3{font-size:15px;margin:22px 0 8px;color:#141b2b;display:flex;align-items:center;gap:8px}
+.rcount{font-size:11px;background:#141b2b;color:#fff;border-radius:99px;padding:1px 8px}
+.rtable{width:100%;border-collapse:collapse;font-size:12px}
+.rtable th{background:#141b2b;color:#fff;text-align:left;padding:7px 8px;font-weight:600}
+.rtable td{padding:6px 8px;border-bottom:1px solid #eef0f3;vertical-align:top}
+.rtable tbody tr:nth-child(even) td{background:#f8f9fb}
+.rbar{display:inline-block;width:60px;height:6px;border-radius:9px;background:#e5e7eb;vertical-align:middle;overflow:hidden}
+.rbar i{display:block;height:100%;background:#0f9d8c}
+.rst{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;background:#eef0f3;color:#374151}
+.rst.delivered,.rst.done,.rst.ontrack{background:#dcf5f1;color:#0b7a6c}
+.rst.atrisk,.rst.stuck,.rst.overdue,.rst.late{background:#fde4e2;color:#b42318}
+.rst.doing{background:#e3ecfd;color:#1f56c2}
+.rfoot{margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:11px;text-align:center}
+@media (max-width:700px){.report{padding:18px}.rtiles{grid-template-columns:repeat(3,1fr)}.rhead{flex-direction:column;align-items:flex-start}}

@@ -7,7 +7,7 @@ const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},se
 
 let TOKEN=store.get("pulse-token"), ME=null, TEAMS=[], TEAM=null, ROLE="team", PROJECTS=[], PEOPLE=[], INVITES=[];
 const S={tasks:[],updates:[],log:[],ms:[],cur:store.get("pulse-project"),tab:"main",open:null,filter:null};
-let lastInvite=null, authMode="in", authErr="";
+let lastInvite=null, authMode="in", authErr="", LOGO="", EDIT=null, CONFIRM=null;
 
 /* ---------- api ---------- */
 async function api(action,body,tries){
@@ -160,7 +160,7 @@ async function reload(){
   if(!TOKEN||!TEAM)return;
   try{
     const j=await api("load",{teamId:TEAM.id,projectId:S.cur});
-    PEOPLE=j.members;ROLE=j.role;PROJECTS=j.projects;INVITES=j.invites||[];S.cur=j.projectId;
+    PEOPLE=j.members;ROLE=j.role;LOGO=j.team.logo||"";TEAM.name=j.team.name||TEAM.name;PROJECTS=j.projects;INVITES=j.invites||[];S.cur=j.projectId;
     S.tasks=j.tasks||[];S.updates=j.updates||[];S.ms=j.milestones||[];S.log=j.log||[];
     store.set("pulse-team",TEAM.id);store.set("pulse-project",S.cur);render();checkWins();
   }catch(e){toast(e.message)}
@@ -181,7 +181,7 @@ function renderTop(){
   document.getElementById("who").innerHTML=`<span class="saving" id="saving"></span><span class="mechip">${av(ME.id)}${esc(ME.name)}</span><button class="linkbtn" data-act="signout">Sign out</button>`;
   const un=S.updates.filter(u=>!u.seenBy.includes(ME.id)).length;
   const t=(k,l)=>`<button class="tab" data-act="tab" data-t="${k}" aria-pressed="${S.tab===k}">${l}</button>`;
-  document.getElementById("tabs").innerHTML=S.cur?t("main",m.mgr?"Control room":"My day")+t("schedule","Schedule")+t("updates",`Updates${un?` <span class="dotn">${un}</span>`:""}`)+t("history","History")+(m.mgr?t("people","Team &amp; roles"):"")+`<span class="spacer"></span><button class="linkbtn" data-act="refresh">Refresh</button>`:(m.mgr?t("people","Team &amp; roles"):"");
+  document.getElementById("tabs").innerHTML=S.cur?t("main",m.mgr?"Control room":"My day")+t("schedule","Schedule")+t("updates",`Updates${un?` <span class="dotn">${un}</span>`:""}`)+t("history","Report")+t("people",m.mgr?"Team &amp; settings":"Settings")+`<span class="spacer"></span><button class="linkbtn" data-act="refresh">Refresh</button>`:t("people",m.mgr?"Team &amp; settings":"Settings");
   document.getElementById("aboutlist").innerHTML=allTags().map(x=>`<option value="${esc(x)}">`).join("");
 }
 
@@ -332,7 +332,22 @@ function renderMgr(){
       ${updates.map(u=>{const o=u.seenBy.filter(id=>id!==u.by&&P(id));return `<div class="upd">${av(u.by,1)}<div class="tx">${esc(u.text)}<div class="meta">${esc(nm(u.by))} · ${ago(u.at)}<span class="seen">${o.map(id=>av(id,1)).join("")}</span><span>Seen by ${o.length} of ${Math.max(PEOPLE.length-1,0)}</span></div></div></div>`}).join("")||`<div class="hint">No updates yet.</div>`}</div>
   </aside></div>`;
 }
+/* ---------- editing ---------- */
+const isEd=(kind,id,j)=>EDIT&&EDIT.kind===kind&&EDIT.id===id&&(j===undefined||EDIT.j===j);
+const delBtn=(act,key,attrs,label)=>`<button class="btn sm danger" data-act="${act}" ${attrs}>${CONFIRM===key?"Yes, delete":(label||"Delete")}</button>`;
+function taskEditor(k){
+  const who=PEOPLE.filter(p=>!p.mgr||p.id===k.to);
+  return `<div class="editbox">
+    <label>Task<input id="et-title" value="${esc(k.title)}"></label>
+    <div class="erow"><label>Who<select id="et-to">${who.map(p=>`<option value="${p.id}" ${p.id===k.to?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
+      <label>Due<input type="date" id="et-due" value="${k.due||""}"></label></div>
+    <div class="erow"><label>About<input id="et-about" list="aboutlist" value="${esc(k.about)}" placeholder="Whole project"></label>
+      <label>Delivery<select id="et-ms"><option value="">No delivery</option>${S.ms.map(x=>`<option value="${x.id}" ${x.id===k.ms?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label></div>
+    <div class="acts"><button class="btn sm go" data-act="savetask" data-id="${k.id}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button><span class="spacer"></span>${delBtn("deltask","t"+k.id,`data-id="${k.id}"`)}</div></div>`;
+}
+const editLink=(kind,id,extra)=>`<button class="linkbtn edl" data-act="edit" data-kind="${kind}" data-id="${id}" ${extra||""} title="Edit">✎ Edit</button>`;
 function miniCard(k,on){
+  if(isEd("task",k.id))return `<div class="mini">${taskEditor(k)}</div>`;
   const m=me(),d=dueInfo(k.due);let a="";
   if(k.status==="stuck")a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(k.stuckOn)}">Chase ${esc(k.stuckOn)}</button>`;
   if(k.status==="new"&&!k.seenAt)a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(nm(k.to))}">Nudge ${esc(nm(k.to))}</button>`;
@@ -342,7 +357,7 @@ function miniCard(k,on){
     <div class="t">${esc(k.title)}</div>
     <div class="row">${k.status==="done"?`<span class="donewhen">Done ${ago(k.doneAt)}</span>`:`<span class="tag due ${d.c}">${d.t}</span>`}
       ${k.status==="new"?(k.seenAt?`<span class="eye yes">✓ Got it</span>`:`<span class="eye no">Not opened yet</span>`):""}${k.status==="stuck"?`<span class="note">on ${esc(k.stuckOn)}</span>`:""}</div>
-    ${a?`<div class="acts">${a}</div>`:""}</div>`;
+    <div class="acts">${a}<span class="spacer"></span>${editLink("task",k.id)}</div></div>`;
 }
 
 /* ---------- schedule ---------- */
@@ -357,22 +372,26 @@ function renderSchedule(){
       ${list.map(x=>{const i=msInfo(x);return `<div class="mk ${i.left<0||i.pct===100?"ok":i.risk==="red"?"risk":""}" style="left:${pos(new Date(x.date+"T12:00").getTime())}%"><i></i><b>${esc(x.name.split(" · ")[0])}</b><span>${new Date(x.date+"T12:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"})} · ${i.pct}%</span></div>`}).join("")}
     </div></div></div>`}
   const card=x=>{const i=msInfo(x);
+    const head=isEd("ms",x.id)?`<div class="editbox"><div class="erow"><label>Delivery name<input id="em-name" value="${esc(x.name)}"></label><label>Date<input type="date" id="em-date" value="${x.date}"></label></div>
+        <div class="acts"><button class="btn sm go" data-act="savems" data-id="${x.id}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button><span class="spacer"></span>${delBtn("delms","m"+x.id,`data-id="${x.id}"`,"Delete delivery")}</div>
+        <span class="hint">Deleting a delivery keeps its tasks; they just stop counting toward it.</span></div>`
+      :`<div class="mtop"><div><div class="mname">${esc(x.name)} ${m.mgr?editLink("ms",x.id):""}</div><div class="hint">${longDate(x.date)}</div></div>${countdown(x,i)}</div>`;
     return `<article class="mcard ${i.left<0?"past":""}">
-      <div class="mtop"><div><div class="mname">${esc(x.name)}</div><div class="hint">${longDate(x.date)}</div></div>${countdown(x,i)}</div>
+      ${head}
       ${bar(i)}
       <div class="tags"><b>${i.pct}% ready</b><span class="hint">· ${i.got} of ${i.total} items · ${i.total-i.got} left</span>${i.late?`<span class="tag due late">${i.late} late</span>`:""}${i.stuck?`<span class="tag due late">${i.stuck} stuck</span>`:""}</div>
       <div class="mgrid">
         <div><h4>What we deliver</h4><div class="dl">
-          ${i.ts.filter(k=>k.deliv).map(k=>`<div class="ditem">${av(k.to,1)}<span class="x ${k.status==="done"?"dn":""}">${esc(k.title)}</span><span class="hint">${esc(nm(k.to))} · ${k.status==="done"?"done "+ago(k.doneAt):dueInfo(k.due).t.replace("Due ","")}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}</div>`).join("")}
-          ${x.items.map((it,j)=>{const op=S.open&&S.open.kind==="assign"&&S.open.ms===x.id&&S.open.j===j;
+          ${i.ts.filter(k=>k.deliv).map(k=>isEd("task",k.id)?taskEditor(k):`<div class="ditem">${av(k.to,1)}<span class="x ${k.status==="done"?"dn":""}">${esc(k.title)}</span><span class="hint">${esc(nm(k.to))} · ${k.status==="done"?"done "+ago(k.doneAt):dueInfo(k.due).t.replace("Due ","")}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}${m.mgr?editLink("task",k.id):""}</div>`).join("")}
+          ${x.items.map((it,j)=>{if(isEd("item",x.id,j))return `<div class="crow assignrow"><input id="ei-text" value="${esc(it.t)}" aria-label="Item name"><button class="btn sm go" data-act="saveitem" data-ms="${x.id}" data-j="${j}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button>${delBtn("delitem","i"+x.id+j,`data-ms="${x.id}" data-j="${j}"`,"Remove")}</div>`;const op=S.open&&S.open.kind==="assign"&&S.open.ms===x.id&&S.open.j===j;
             return `<div class="ditem"><label class="${it.ok?"ok":""}"><input type="checkbox" data-act="tick" data-ms="${x.id}" data-j="${j}" ${it.ok?"checked":""} ${m.mgr?"":"disabled"}><span>${esc(it.t)}</span></label>
-            ${m.mgr&&!it.ok?`<button class="linkbtn" data-act="assignopen" data-ms="${x.id}" data-j="${j}">${op?"Cancel":"Give to someone"}</button>`:""}</div>
+            ${m.mgr&&!it.ok?`<button class="linkbtn" data-act="assignopen" data-ms="${x.id}" data-j="${j}">${op?"Cancel":"Give to someone"}</button>`:""}${m.mgr?editLink("item",x.id,`data-j="${j}"`):""}</div>
             ${op?`<div class="crow assignrow">${personSelect("as-"+x.id+"-"+j)}<input type="date" id="ad-${x.id}-${j}" aria-label="Due date" max="${x.date}" value="${dstr(Math.min(Date.now()+3*DAY,new Date(x.date+"T12:00").getTime()))}"><button class="btn sm go" data-act="assignitem" data-ms="${x.id}" data-j="${j}">Send</button></div>`:""}`}).join("")}
           ${!x.items.length&&!i.ts.some(k=>k.deliv)?`<span class="hint">No items listed.</span>`:""}</div>
           ${m.mgr?`<div class="additem"><input type="text" id="ni-${x.id}" placeholder="Add an item, e.g. Sections A–D" aria-label="New item">
             <div class="crow">${personSelect("np-"+x.id,true)}<input type="date" id="nd-${x.id}" aria-label="Due date" max="${x.date}"><button class="btn sm go" data-act="additem" data-ms="${x.id}">Add</button></div>
             <span class="hint">Pick a person to send it as a task, or leave “No one yet” and tick it yourself.</span></div>`:`<div class="hint" style="margin-top:4px">Items with a name are tasks; managers tick the rest.</div>`}</div>
-        <div><h4>Other tasks for this delivery</h4><div class="tl">${i.ts.filter(k=>!k.deliv).map(k=>`<div>${av(k.to,1)}<span class="x">${esc(k.title)}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}</div>`).join("")||`<span class="hint">No tasks linked yet. Pick this delivery when you give out a task.</span>`}</div></div>
+        <div><h4>Other tasks for this delivery</h4><div class="tl">${i.ts.filter(k=>!k.deliv).map(k=>isEd("task",k.id)?taskEditor(k):`<div>${av(k.to,1)}<span class="x">${esc(k.title)}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}${m.mgr?editLink("task",k.id):""}</div>`).join("")||`<span class="hint">No tasks linked yet. Pick this delivery when you give out a task.</span>`}</div></div>
       </div></article>`};
   return `<h1>Schedule &amp; deliveries</h1>
   <p class="sub">Every delivery, its date, and how much is ready. Everyone sees the same bar, so the whole team knows how close we are.</p>
@@ -394,12 +413,15 @@ function renderSchedule(){
 let uf={q:"",about:"all"},udraft={text:"",about:""};
 function updCard(u){
   const m=me(),others=u.seenBy.filter(id=>id!==u.by&&P(id));
+  if(isEd("upd",u.id))return `<article class="ucard"><div class="editbox"><label>Update<textarea id="eu-text" rows="3">${esc(u.text)}</textarea></label>
+    <label>About<input id="eu-about" list="aboutlist" value="${esc(u.about)}" placeholder="Whole project"></label>
+    <div class="acts"><button class="btn sm go" data-act="saveupd" data-id="${u.id}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button><span class="spacer"></span>${delBtn("delupd","u"+u.id,`data-id="${u.id}"`)}</div></div></article>`;
   return `<article class="ucard ${u.pinned?"pinned":""}">
     <div class="thead">${av(u.by,1)}<span><b style="color:var(--ink)">${esc(nm(u.by))}</b> · ${new Date(u.at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})} · ${ago(u.at)}</span>${u.pinned?`<span class="pin">Pinned</span>`:""}<span style="margin-left:auto">${aboutTag(u.about)}</span></div>
     <div class="utext">${esc(u.text)}</div>
     <div class="meta"><span class="seen">${others.map(id=>av(id,1)).join("")}</span><span class="hint">Seen by ${others.length} of ${Math.max(PEOPLE.length-1,0)}</span>
       <span style="margin-left:auto;display:flex;gap:6px">${u.seenBy.includes(m.id)?`<span style="color:var(--teal);font-weight:600;font-size:13px">✓ Seen</span>`:`<button class="btn sm go" data-act="seenupd" data-id="${u.id}">👍 Seen</button>`}
-      ${m.mgr?`<button class="btn sm quiet" data-act="pin" data-id="${u.id}">${u.pinned?"Unpin":"Pin"}</button>`:""}</span></div></article>`;
+      ${m.mgr?`<button class="btn sm quiet" data-act="pin" data-id="${u.id}">${u.pinned?"Unpin":"Pin"}</button>${editLink("upd",u.id)}`:""}</span></div></article>`;
 }
 function updList(){
   const q=uf.q.toLowerCase().trim();
@@ -431,41 +453,169 @@ function renderUpdates(){
     <div><b>Pinned</b> rules stay on top. Nothing gets deleted, so you can always go back.</div></div></div></aside></div>`;
 }
 
-/* ---------- history ---------- */
-let hf={who:"all",from:dstr(Date.now()-14*DAY),to:dstr(Date.now())};
-function histRows(){const f=new Date(hf.from+"T00:00").getTime(),t=new Date(hf.to+"T23:59:59").getTime(),n=P(hf.who)?.name;
-  return S.log.filter(e=>e.at>=f&&e.at<=t&&(hf.who==="all"||e.who===hf.who||(n&&e.txt.includes(" "+n)))).sort((a,b)=>b.at-a.at)}
+/* ---------- report ---------- */
+const R={from:dstr(Date.now()-29*DAY),to:dstr(Date.now()),scope:"project",who:"all",data:null,key:"",loading:false};
+const RANGES=()=>{const n=new Date(),y=n.getFullYear(),mo=n.getMonth(),f=d=>dstr(d.getTime());
+  return [["Last 7 days",dstr(Date.now()-6*DAY),dstr(Date.now())],["Last 30 days",dstr(Date.now()-29*DAY),dstr(Date.now())],
+    ["This month",f(new Date(y,mo,1)),dstr(Date.now())],["Last month",f(new Date(y,mo-1,1)),f(new Date(y,mo,0))],["This year",f(new Date(y,0,1)),dstr(Date.now())]]};
+const repKey=()=>[TEAM.id,R.scope==="project"?S.cur:"all",R.from,R.to].join("|");
+async function loadReport(){
+  R.loading=true;render();
+  try{const j=await api("report",{teamId:TEAM.id,projectId:R.scope==="project"?S.cur:"",from:new Date(R.from+"T00:00").getTime(),to:new Date(R.to+"T23:59:59").getTime()});R.data=j;R.key=repKey()}
+  catch(e){toast(e.message)}
+  R.loading=false;render();
+}
+function repModel(){
+  const d=R.data,f=new Date(R.from+"T00:00").getTime(),t=new Date(R.to+"T23:59:59").getTime(),inR=x=>x&&x>=f&&x<=t,pn=id=>(d.projects.find(p=>p.id===id)||{}).name||"";
+  const n=P(R.who)?.name,whoOk=e=>R.who==="all"||e.who===R.who||(n&&e.txt.includes(" "+n));
+  const log=d.log.filter(whoOk).sort((a,b)=>a.at-b.at);
+  const tasks=d.tasks.filter(k=>R.who==="all"||k.to===R.who);
+  const given=tasks.filter(k=>inR(k.at)),fin=tasks.filter(k=>k.status==="done"&&inR(k.doneAt)),ontime=fin.filter(k=>!k.due||onTimeK(k));
+  const lateNow=tasks.filter(isLate),stuckNow=tasks.filter(k=>k.status==="stuck");
+  const ms=d.milestones.map(m=>{const ts=d.tasks.filter(k=>k.ms===m.id),done=ts.filter(k=>k.status==="done").length,ready=m.items.filter(i=>i.ok).length,total=ts.length+m.items.length,pct=total?Math.round((done+ready)/total*100):0,left=daysTo(m.date);
+    return{name:m.name,project:pn(m.projectId),date:m.date,pct,state:pct===100&&total?"Delivered":left<0?"Overdue":(left<=7&&pct<70)?"At risk":"On track"}}).sort((a,b)=>a.date.localeCompare(b.date));
+  const title=R.scope==="project"?(pn(S.cur)||(PROJECTS.find(p=>p.id===S.cur)||{}).name||"Project"):"All projects";
+  return{title,range:`${longDate(R.from)} – ${longDate(R.to)}`,person:n||"",log,given,fin,ontime,lateNow,stuckNow,ms,updates:d.updates.length,pn,multi:R.scope!=="project",
+    tasks:tasks.slice().sort((a,b)=>(a.due||"9").localeCompare(b.due||"9"))};
+}
+const stLabel=k=>isLate(k)?"Late":{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status];
+function reportHTML(M){
+  const pct=M.fin.length?Math.round(M.ontime.length/M.fin.length*100):0;
+  const tile=(n,l,c)=>`<div class="rtile ${c||""}"><b>${n}</b><span>${l}</span></div>`;
+  return `<div class="report" id="report">
+    <div class="rhead">${LOGO?`<img src="${LOGO}" alt="Company logo" class="rlogo">`:""}<div class="rtitle"><div class="rteam">${esc(TEAM.name)}</div><h2>${esc(M.title)} · Progress report</h2>
+      <div class="rmeta">${M.range}${M.person?` · ${esc(M.person)}`:""} · Prepared by ${esc(ME.name)} on ${longDate(dstr(Date.now()))}</div></div></div>
+    <div class="rtiles">${tile(M.given.length,"Tasks given")}${tile(M.fin.length,"Tasks finished","ok")}${tile(pct+"%","Finished on time")}${tile(M.lateNow.length,"Late now",M.lateNow.length?"bad":"")}${tile(M.stuckNow.length,"Stuck now",M.stuckNow.length?"bad":"")}${tile(M.updates,"Updates posted")}</div>
+    ${M.ms.length?`<h3>Deliveries</h3><table class="rtable"><thead><tr><th>Delivery</th>${M.multi?"<th>Project</th>":""}<th>Date</th><th>Ready</th><th>Status</th></tr></thead><tbody>
+      ${M.ms.map(x=>`<tr><td>${esc(x.name)}</td>${M.multi?`<td>${esc(x.project)}</td>`:""}<td>${longDate(x.date)}</td><td><span class="rbar"><i style="width:${x.pct}%"></i></span> ${x.pct}%</td><td><span class="rst ${x.state.replace(" ","").toLowerCase()}">${x.state}</span></td></tr>`).join("")}</tbody></table>`:""}
+    <h3>List of changes <span class="rcount">${M.log.length}</span></h3>
+    ${M.log.length?`<table class="rtable"><thead><tr><th style="width:92px">Date</th><th style="width:52px">Time</th>${M.multi?"<th>Project</th>":""}<th style="width:120px">Who</th><th>What changed</th></tr></thead><tbody>
+      ${M.log.map(e=>`<tr><td>${dShort(e.at)}</td><td>${tShort(e.at)}</td>${M.multi?`<td>${esc(M.pn(e.projectId))}</td>`:""}<td>${esc(nm(e.who))}</td><td>${esc(e.txt)}</td></tr>`).join("")}</tbody></table>`:`<p class="hint">Nothing changed in these dates.</p>`}
+    <h3>Task status today</h3>
+    ${M.tasks.length?`<table class="rtable"><thead><tr><th>Task</th>${M.multi?"<th>Project</th>":""}<th>Who</th><th>Due</th><th>Status</th><th>Finished</th></tr></thead><tbody>
+      ${M.tasks.map(k=>`<tr><td>${esc(k.title)}</td>${M.multi?`<td>${esc(M.pn(k.projectId))}</td>`:""}<td>${esc(nm(k.to))}</td><td>${k.due?new Date(k.due+"T12:00").toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):""}</td><td><span class="rst ${stLabel(k).toLowerCase()}">${stLabel(k)}</span></td><td>${k.doneAt?new Date(k.doneAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})+(k.due?(onTimeK(k)?" · on time":" · late"):""):""}</td></tr>`).join("")}</tbody></table>`:`<p class="hint">No tasks yet.</p>`}
+    <div class="rfoot">Generated with Project Pulse · ${new Date().toLocaleString("en-GB")}</div></div>`;
+}
 function renderHistory(){
-  const rows=histRows();let html="",day="";
-  rows.forEach(e=>{const d=new Date(e.at).toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});if(d!==day){day=d;html+=`<div class="day">${d}</div>`}
-    html+=`<div class="ev"><span class="tm">${new Date(e.at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</span>${av(e.who,1)}<div><span class="k">${esc(nm(e.who))}</span> ${esc(e.txt)}</div></div>`});
-  return `<h1>Everything, on record.</h1>
-  <p class="sub">Every task, update, stuck and done is saved with its time. Nobody writes a report by hand.</p>
-  <div class="panel"><div class="hfilters">
-    <label>Person<select id="hwho"><option value="all">Everyone</option>${PEOPLE.map(p=>`<option value="${p.id}" ${hf.who===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
-    <label>From<input type="date" id="hfrom" value="${hf.from}"></label><label>To<input type="date" id="hto" value="${hf.to}"></label>
-    <button class="btn" data-act="copy">Copy for Excel</button><span class="hint">${rows.length} entries</span></div>
-    ${html||`<div class="empty">Nothing in these dates.</div>`}</div>`;
+  if(R.data&&R.key!==repKey())R.data=null;
+  if(!R.data&&!R.loading)setTimeout(loadReport,0);
+  const M=R.data?repModel():null;
+  return `<h1>Reports</h1>
+  <p class="sub">Every change is saved with its time. Pick the dates and download a report with your logo as PDF, Word or Excel.</p>
+  <div class="panel rcontrols">
+    <div class="chips">${RANGES().map(([l,a,b])=>`<button class="chip" data-act="rrange" data-a="${a}" data-b="${b}" aria-pressed="${R.from===a&&R.to===b}">${l}</button>`).join("")}</div>
+    <div class="hfilters">
+      <label>From<input type="date" id="rfrom" value="${R.from}" max="${R.to}"></label><label>To<input type="date" id="rto" value="${R.to}" min="${R.from}"></label>
+      <label>Projects<select id="rscope"><option value="project" ${R.scope==="project"?"selected":""}>This project</option><option value="all" ${R.scope==="all"?"selected":""}>All projects</option></select></label>
+      <label>Person<select id="rwho"><option value="all">Everyone</option>${PEOPLE.map(p=>`<option value="${p.id}" ${R.who===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
+    </div>
+    <div class="rbtns"><button class="btn go" data-act="export" data-f="pdf" ${M?"":"disabled"}>⬇ PDF</button><button class="btn" data-act="export" data-f="docx" ${M?"":"disabled"}>⬇ Word</button><button class="btn" data-act="export" data-f="xlsx" ${M?"":"disabled"}>⬇ Excel</button>
+      ${!LOGO&&me().mgr?`<button class="linkbtn" data-act="tab" data-t="people">+ Add your company logo</button>`:""}</div>
+  </div>
+  <div class="rwrap">${R.loading||!M?`<div class="panel empty">Building the report…</div>`:reportHTML(M)}</div>`;
+}
+/* ---------- exports ---------- */
+const LIBS={pdf:"https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js",xlsx:"https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js",docx:"https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"};
+const libP={};
+function lib(f){return libP[f]||(libP[f]=new Promise((ok,no)=>{const sc=document.createElement("script");sc.src=LIBS[f];sc.onload=ok;sc.onerror=()=>{delete libP[f];no(new Error("Could not load the export tool. Check your internet."))};document.head.appendChild(sc)}))}
+function saveBlob(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+const fileBase=M=>("Project-Pulse_"+M.title+"_"+R.from+"_to_"+R.to).replace(/[^\w\-]+/g,"-").replace(/-+/g,"-");
+function logoInfo(){return new Promise(ok=>{if(!LOGO)return ok(null);const im=new Image();im.onload=()=>ok({w:im.naturalWidth,h:im.naturalHeight,b64:LOGO.split(",")[1],ext:/jpeg/.test(LOGO)?"jpeg":"png"});im.onerror=()=>ok(null);im.src=LOGO})}
+const fit=(l,maxW,maxH)=>{const r=Math.min(maxW/l.w,maxH/l.h,1);return{w:Math.round(l.w*r),h:Math.round(l.h*r)}};
+function dShort(ms){return new Date(ms).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
+function tShort(ms){return new Date(ms).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
+async function exportPDF(M){
+  await lib("pdf");const el=document.getElementById("report");el.classList.add("printing");
+  try{await html2pdf().set({margin:[10,10,12,10],filename:fileBase(M)+".pdf",image:{type:"jpeg",quality:.96},html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff"},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"],avoid:["tr",".rtiles",".rhead","h3"]}}).from(el).save()}
+  finally{el.classList.remove("printing")}
+}
+async function exportXLSX(M){
+  await lib("xlsx");const wb=new ExcelJS.Workbook();wb.creator="Project Pulse";const L=await logoInfo();
+  const head={font:{bold:true,color:{argb:"FFFFFFFF"}},fill:{type:"pattern",pattern:"solid",fgColor:{argb:"FF141B2B"}},alignment:{vertical:"middle"}};
+  const ws=wb.addWorksheet("Report",{views:[{showGridLines:false}]});
+  const cols=M.multi?["Date","Time","Project","Who","What changed"]:["Date","Time","Who","What changed"];
+  ws.columns=(M.multi?[14,8,22,20,80]:[14,8,20,90]).map(w=>({width:w}));
+  let r=1;
+  if(L){const id=wb.addImage({base64:L.b64,extension:L.ext});const s=fit(L,220,70);ws.addImage(id,{tl:{col:0,row:0},ext:{width:s.w,height:s.h}});r=5}
+  ws.getCell(r,1).value=TEAM.name;ws.getCell(r,1).font={size:11,color:{argb:"FF6B7280"}};r++;
+  ws.getCell(r,1).value=M.title+" · Progress report";ws.getCell(r,1).font={size:16,bold:true};r++;
+  ws.getCell(r,1).value=M.range+(M.person?" · "+M.person:"")+" · Prepared by "+ME.name;ws.getCell(r,1).font={color:{argb:"FF6B7280"}};r+=2;
+  const pct=M.fin.length?Math.round(M.ontime.length/M.fin.length*100):0;
+  [["Tasks given",M.given.length],["Tasks finished",M.fin.length],["Finished on time",pct+"%"],["Late now",M.lateNow.length],["Stuck now",M.stuckNow.length],["Updates posted",M.updates]].forEach(([a,b])=>{ws.getCell(r,1).value=a;ws.getCell(r,2).value=b;ws.getCell(r,2).font={bold:true};ws.getCell(r,2).alignment={horizontal:"left"};r++});
+  r++;ws.getCell(r,1).value="List of changes";ws.getCell(r,1).font={size:13,bold:true};r++;
+  const hr=ws.getRow(r);cols.forEach((c,i)=>{const cell=hr.getCell(i+1);cell.value=c;cell.font=head.font;cell.fill=head.fill;cell.alignment=head.alignment});hr.height=20;const top=r;r++;
+  M.log.forEach(e=>{const row=ws.getRow(r++);row.values=M.multi?[dShort(e.at),tShort(e.at),M.pn(e.projectId),nm(e.who),e.txt]:[dShort(e.at),tShort(e.at),nm(e.who),e.txt];row.getCell(cols.length).alignment={wrapText:true,vertical:"top"}});
+  ws.autoFilter={from:{row:top,column:1},to:{row:Math.max(top,r-1),column:cols.length}};
+  const styleHead=sh=>sh.getRow(1).eachCell(c=>{c.font=head.font;c.fill=head.fill;c.alignment=head.alignment});
+  const t2=wb.addWorksheet("Tasks");const tc=["Task",...(M.multi?["Project"]:[]),"Who","About","Due","Status","Finished","On time"];
+  t2.columns=tc.map(c=>({header:c,width:c==="Task"?50:c==="Project"?22:14}));styleHead(t2);
+  M.tasks.forEach(k=>t2.addRow([k.title,...(M.multi?[M.pn(k.projectId)]:[]),nm(k.to),k.about||"Whole project",k.due||"",stLabel(k),k.doneAt?dShort(k.doneAt):"",k.doneAt&&k.due?(onTimeK(k)?"Yes":"No"):""]));
+  t2.autoFilter={from:{row:1,column:1},to:{row:1,column:tc.length}};
+  if(M.ms.length){const t3=wb.addWorksheet("Deliveries");t3.columns=[{header:"Delivery",width:30},...(M.multi?[{header:"Project",width:22}]:[]),{header:"Date",width:14},{header:"Ready %",width:10},{header:"Status",width:12}];styleHead(t3);
+    M.ms.forEach(x=>t3.addRow([x.name,...(M.multi?[x.project]:[]),x.date,x.pct,x.state]))}
+  saveBlob(new Blob([await wb.xlsx.writeBuffer()],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),fileBase(M)+".xlsx");
+}
+async function exportDOCX(M){
+  await lib("docx");const D=window.docx,L=await logoInfo();
+  const txt=(t,o)=>new D.TextRun(Object.assign({text:String(t??""),font:"Calibri",size:20},o||{}));
+  const para=(t,o,po)=>new D.Paragraph(Object.assign({children:[txt(t,o)]},po||{}));
+  const bdr={style:D.BorderStyle.SINGLE,size:4,color:"DDDDDD"},borders={top:bdr,bottom:bdr,left:bdr,right:bdr,insideHorizontal:bdr,insideVertical:bdr};
+  const table=(cols,rows,widths)=>new D.Table({width:{size:100,type:D.WidthType.PERCENTAGE},borders,rows:[
+    new D.TableRow({tableHeader:true,children:cols.map((c,i)=>new D.TableCell({width:{size:widths[i],type:D.WidthType.PERCENTAGE},shading:{fill:"141B2B",type:D.ShadingType.CLEAR,color:"auto"},children:[para(c,{bold:true,color:"FFFFFF",size:18})]}))}),
+    ...rows.map(r=>new D.TableRow({cantSplit:true,children:r.map((c,i)=>new D.TableCell({width:{size:widths[i],type:D.WidthType.PERCENTAGE},children:[para(c,{size:18})]}))}))]});
+  const kids=[];
+  if(L){const s=fit(L,200,64);const bin=Uint8Array.from(atob(L.b64),c=>c.charCodeAt(0));kids.push(new D.Paragraph({children:[new D.ImageRun({data:bin,transformation:{width:s.w,height:s.h}})]}))}
+  kids.push(para(TEAM.name,{color:"6B7280"}),para(M.title+" · Progress report",{bold:true,size:36},{spacing:{after:80}}),para(M.range+(M.person?" · "+M.person:"")+" · Prepared by "+ME.name+" on "+longDate(dstr(Date.now())),{color:"6B7280"},{spacing:{after:240}}));
+  const pct=M.fin.length?Math.round(M.ontime.length/M.fin.length*100):0;
+  kids.push(table(["Tasks given","Tasks finished","On time","Late now","Stuck now","Updates"],[[M.given.length,M.fin.length,pct+"%",M.lateNow.length,M.stuckNow.length,M.updates].map(String)],[17,17,16,16,17,17]));
+  const h=t=>para(t,{bold:true,size:26},{spacing:{before:300,after:120}});
+  if(M.ms.length){kids.push(h("Deliveries"),table(["Delivery",...(M.multi?["Project"]:[]),"Date","Ready","Status"],M.ms.map(x=>[x.name,...(M.multi?[x.project]:[]),longDate(x.date),x.pct+"%",x.state]),M.multi?[30,22,22,10,16]:[40,28,12,20]))}
+  kids.push(h("List of changes ("+M.log.length+")"));
+  if(M.log.length)kids.push(table(["Date","Time",...(M.multi?["Project"]:[]),"Who","What changed"],M.log.map(e=>[dShort(e.at),tShort(e.at),...(M.multi?[M.pn(e.projectId)]:[]),nm(e.who),e.txt]),M.multi?[13,8,16,15,48]:[14,9,17,60]));
+  else kids.push(para("Nothing changed in these dates.",{color:"6B7280"}));
+  kids.push(h("Task status today"));
+  if(M.tasks.length)kids.push(table(["Task",...(M.multi?["Project"]:[]),"Who","Due","Status","Finished"],M.tasks.map(k=>[k.title,...(M.multi?[M.pn(k.projectId)]:[]),nm(k.to),k.due||"",stLabel(k),k.doneAt?dShort(k.doneAt):""]),M.multi?[34,16,16,10,10,14]:[42,18,12,12,16]));
+  const doc=new D.Document({creator:"Project Pulse",title:M.title+" report",sections:[{properties:{page:{margin:{top:900,bottom:900,left:900,right:900}}},
+    footers:{default:new D.Footer({children:[new D.Paragraph({alignment:D.AlignmentType.CENTER,children:[txt("Project Pulse · page ",{size:16,color:"9CA3AF"}),new D.TextRun({children:[D.PageNumber.CURRENT],size:16,color:"9CA3AF"})]})]})},children:kids}]});
+  saveBlob(await D.Packer.toBlob(doc),fileBase(M)+".docx");
 }
 
-/* ---------- team & roles ---------- */
+/* ---------- team & settings ---------- */
 let newRole="team";
+function shrinkLogo(file){return new Promise((ok,no)=>{
+  if(!/^image\/(png|jpeg|webp|gif)$/.test(file.type))return no(new Error("Pick a PNG or JPG image"));
+  const fr=new FileReader();fr.onerror=()=>no(new Error("Could not read the image"));
+  fr.onload=()=>{const im=new Image();im.onerror=()=>no(new Error("Could not read the image"));im.onload=()=>{
+    for(const max of [420,340,260,200,150]){const r=Math.min(max/im.width,(max*.45)/im.height,1),c=document.createElement("canvas");c.width=Math.max(1,Math.round(im.width*r));c.height=Math.max(1,Math.round(im.height*r));
+      c.getContext("2d").drawImage(im,0,0,c.width,c.height);let u=c.toDataURL("image/png");if(u.length<=46000)return ok(u);
+      const c2=document.createElement("canvas");c2.width=c.width;c2.height=c.height;const x=c2.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c2.width,c2.height);x.drawImage(c,0,0);u=c2.toDataURL("image/jpeg",.85);if(u.length<=46000)return ok(u)}
+    no(new Error("That image is too detailed. Try a simpler logo"))};im.src=fr.result};fr.readAsDataURL(file)})}
 function renderPeople(){
-  const mgrs=PEOPLE.filter(p=>p.mgr).length,link=lastInvite?`${location.origin}${location.pathname}?invite=${lastInvite.code}`:"";
+  const m=me(),mgrs=PEOPLE.filter(p=>p.mgr).length,link=lastInvite?`${location.origin}${location.pathname}?invite=${lastInvite.code}`:"";
+  const proj=PROJECTS.find(p=>p.id===S.cur);
   const row=p=>`<div class="prow">${av(p.id)}<div class="pinfo"><b>${esc(p.name)}${p.id===ME.id?' <span class="hint">(you)</span>':""}</b><span class="hint">${p.mgr?"Gives out tasks, posts updates, plans deliveries":"Gets tasks, marks them done"}</span></div>
-      <div class="seg"><button data-act="setrole" data-id="${p.id}" data-v="mgr" aria-pressed="${!!p.mgr}">Manager</button><button data-act="setrole" data-id="${p.id}" data-v="team" aria-pressed="${!p.mgr}">Team</button></div></div>`;
-  return `<h1>Who's who in ${esc(TEAM.name)}</h1>
-  <p class="sub">Tap <b>Manager</b> or <b>Team</b> next to each name. People from other teams never see your projects.</p>
+      ${m.mgr?`<div class="seg"><button data-act="setrole" data-id="${p.id}" data-v="mgr" aria-pressed="${!!p.mgr}">Manager</button><button data-act="setrole" data-id="${p.id}" data-v="team" aria-pressed="${!p.mgr}">Team</button></div>`:`<span class="tag due">${p.mgr?"Manager":"Team"}</span>`}</div>`;
+  return `<h1>${m.mgr?"Team &amp; settings":"Settings"}</h1>
+  <p class="sub">${m.mgr?"Rename things, add your company logo for reports, and choose who is a manager.":"Change how your name shows to the team."}</p>
   <div class="layout"><div class="stack">
+    <div class="panel"><h2>Names</h2><div class="form">
+      <label>Your name<span class="inl"><input id="set-me" value="${esc(ME.name)}"><button class="btn sm go" data-act="saveme">Save</button></span></label>
+      ${m.mgr?`<label>Company / team name<span class="inl"><input id="set-team" value="${esc(TEAM.name)}"><button class="btn sm go" data-act="saveteam">Save</button></span></label>
+      ${proj?`<label>This project's name<span class="inl"><input id="set-proj" value="${esc(proj.name)}"><button class="btn sm go" data-act="saveproj">Save</button></span></label>`:""}`:""}
+    </div></div>
+    ${m.mgr?`<div class="panel"><h2>Company logo</h2><div class="logobox">${LOGO?`<img src="${LOGO}" alt="Company logo">`:`<span class="hint">No logo yet</span>`}</div>
+      <div class="crow"><label class="btn go" style="cursor:pointer">${LOGO?"Change logo":"Upload logo"}<input type="file" id="set-logo" accept="image/png,image/jpeg,image/webp" hidden></label>${LOGO?`<button class="btn quiet" data-act="dellogo">Remove</button>`:""}</div>
+      <span class="hint">It shows at the top of every PDF, Word and Excel report.</span></div>`:""}
     <div class="panel"><h2>Managers <span class="n">${mgrs}</span></h2>${PEOPLE.filter(p=>p.mgr).map(row).join("")}</div>
-    <div class="panel"><h2>Team <span class="n">${PEOPLE.length-mgrs}</span></h2>${team().map(row).join("")||`<div class="empty">No team members yet. Invite someone on the right.</div>`}</div>
+    <div class="panel"><h2>Team <span class="n">${PEOPLE.length-mgrs}</span></h2>${team().map(row).join("")||`<div class="empty">No team members yet.${m.mgr?" Invite someone on the right.":""}</div>`}</div>
   </div>
-  <aside class="rail"><div class="panel"><h2>Invite someone</h2><div class="stack" style="gap:10px">
+  <aside class="rail">${m.mgr?`<div class="panel"><h2>Invite someone</h2><div class="stack" style="gap:10px">
       <div class="seg"><button data-act="newrole" data-v="team" aria-pressed="${newRole==="team"}">As team</button><button data-act="newrole" data-v="mgr" aria-pressed="${newRole==="mgr"}">As manager</button></div>
       <button class="btn go" data-act="invite">Make an invite code</button>
       ${lastInvite?`<div class="invite"><code>${lastInvite.code}</code><button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy link</button></div><span class="hint">Send the link on WhatsApp or email. It works once, for one person, as ${lastInvite.role==="mgr"?"a manager":"a team member"}.</span>`:`<span class="hint">Each code works once. The person opens the link, creates an account and lands in this team.</span>`}
       ${INVITES.length?`<div class="hint">Unused codes: ${INVITES.map(i=>`<code>${esc(i.code)}</code> (${i.role==="mgr"?"manager":"team"})`).join(", ")}</div>`:""}
-    </div></div></aside></div>`;
+    </div></div>`:""}
+    <div class="panel"><h2>Your account</h2><div class="hint">${esc(ME.email)}</div><button class="btn quiet" data-act="signout" style="margin-top:8px">Sign out</button></div></aside></div>`;
 }
 function renderNewProject(){
   return `<h1>${PROJECTS.length?"New project":"Create your first project"}</h1><p class="sub">The same team can run as many projects as you like. Switch between them from the menu at the top.</p>
@@ -481,7 +631,7 @@ function renderNewProject(){
 function render(){
   if(!ME)return;
   const m=me();
-  if((S.tab==="people"||S.tab==="newproj")&&!m.mgr)S.tab="main";
+  if(S.tab==="newproj"&&!m.mgr)S.tab="main";
   renderTop();
   let html;
   if(S.tab==="people")html=renderPeople();
@@ -503,7 +653,46 @@ document.addEventListener("submit",e=>{if(e.target.id==="authform"){e.preventDef
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act,k=b.dataset.id?T(b.dataset.id):null,m=ME?me():null;
   const taskDo=(t,doWhat,extra,logTxt,msg)=>send("taskAction",Object.assign({id:t.id,do:doWhat,logTxt},extra||{}),msg).then(j=>{Object.assign(t,j.task);render()}).catch(()=>{});
+  if(!/^(del|edit$)/.test(a))CONFIRM=null;
+  const fmtD=v=>v?new Date(v+"T12:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"no date";
+  const confirmOr=key=>{if(CONFIRM!==key){CONFIRM=key;render();return false}CONFIRM=null;return true};
   switch(a){
+    case"edit":EDIT={kind:b.dataset.kind,id:b.dataset.id,j:b.dataset.j!==undefined?+b.dataset.j:undefined};CONFIRM=null;S.open=null;break;
+    case"canceledit":EDIT=null;CONFIRM=null;break;
+    case"savetask":{const v=id=>document.getElementById(id).value.trim();const nt={title:v("et-title"),to:v("et-to"),due:v("et-due"),about:v("et-about"),ms:v("et-ms")};
+      if(!nt.title){toast("The task needs a title");return}
+      const ch=[];if(nt.title!==k.title)ch.push(`renamed it to “${nt.title}”`);if(nt.to!==k.to)ch.push(`moved it from ${nm(k.to)} to ${nm(nt.to)}`);
+      if(nt.due!==(k.due||""))ch.push(`due ${fmtD(k.due)} → ${fmtD(nt.due)}`);if(nt.about!==(k.about||""))ch.push(`about “${nt.about||"Whole project"}”`);
+      if(nt.ms!==(k.ms||""))ch.push(nt.ms?`linked to ${MS(nt.ms).name}`:"removed from its delivery");
+      if(!ch.length){EDIT=null;break}
+      try{const j=await send("editTask",Object.assign({id:k.id,logTxt:`edited “${k.title}”: ${ch.join(", ")}`},nt),"Task updated");Object.assign(k,j.task);EDIT=null}catch(err){return}break}
+    case"deltask":{if(!confirmOr("t"+k.id))return;try{await send("deleteTask",{id:k.id},"Task deleted");S.tasks=S.tasks.filter(x=>x.id!==k.id);EDIT=null}catch(err){return}break}
+    case"saveupd":{const u=S.updates.find(x=>x.id===b.dataset.id),text=document.getElementById("eu-text").value.trim(),about=document.getElementById("eu-about").value.trim();
+      if(!text){toast("The update cannot be empty");return}
+      try{const j=await send("editUpdate",{id:u.id,text,about},"Update saved");Object.assign(u,j.update);EDIT=null}catch(err){return}break}
+    case"delupd":{if(!confirmOr("u"+b.dataset.id))return;try{await send("deleteUpdate",{id:b.dataset.id},"Update deleted");S.updates=S.updates.filter(x=>x.id!==b.dataset.id);EDIT=null}catch(err){return}break}
+    case"savems":{const x=MS(b.dataset.id),name=document.getElementById("em-name").value.trim(),date=document.getElementById("em-date").value;
+      if(!name||!date){toast("Add a name and a date");return}
+      const ch=[];if(name!==x.name)ch.push(`renamed ${x.name} to ${name}`);if(date!==x.date)ch.push(`moved ${name} from ${longDate(x.date)} to ${longDate(date)}`);
+      if(!ch.length){EDIT=null;break}
+      try{const j=await send("saveMilestone",{projectId:S.cur,id:x.id,name,date,items:x.items,logTxt:ch.join("; ")},"Delivery updated");Object.assign(x,j.milestone);EDIT=null}catch(err){return}break}
+    case"delms":{const x=MS(b.dataset.id);if(!confirmOr("m"+x.id))return;
+      try{await send("deleteMilestone",{id:x.id},`${x.name} removed`);S.ms=S.ms.filter(m=>m.id!==x.id);S.tasks.forEach(t=>{if(t.ms===x.id)t.ms=""});EDIT=null}catch(err){return}break}
+    case"saveitem":{const x=MS(b.dataset.ms),j=+b.dataset.j,v=document.getElementById("ei-text").value.trim();if(!v){toast("Type the item");return}
+      const old=x.items[j].t;if(v!==old){x.items[j].t=v;try{await saveMs(x,`renamed “${old}” to “${v}” in ${x.name}`)}catch(err){return}}EDIT=null;break}
+    case"delitem":{const x=MS(b.dataset.ms),j=+b.dataset.j;if(!confirmOr("i"+x.id+j))return;const it=x.items.splice(j,1)[0];EDIT=null;
+      try{await saveMs(x,`removed “${it.t}” from ${x.name}`);toast("Item removed")}catch(err){return}break}
+    case"saveme":{const v=document.getElementById("set-me").value.trim();if(!v){toast("Type your name");return}
+      try{await send("editMe",{name:v},"Name saved");ME.name=v;const p=P(ME.id);if(p)p.name=v}catch(err){return}break}
+    case"saveteam":{const v=document.getElementById("set-team").value.trim();if(!v){toast("Type the team name");return}
+      try{await send("editTeam",{teamId:TEAM.id,name:v},"Team name saved");TEAM.name=v;const t=TEAMS.find(x=>x.id===TEAM.id);if(t)t.name=v}catch(err){return}break}
+    case"saveproj":{const v=document.getElementById("set-proj").value.trim(),pr=PROJECTS.find(x=>x.id===S.cur);if(!v){toast("Give the project a name");return}
+      if(v===pr.name)return;try{await send("renameProject",{projectId:S.cur,name:v},"Project renamed");pr.name=v;R.data=null}catch(err){return}break}
+    case"dellogo":{try{await send("editTeam",{teamId:TEAM.id,logo:""},"Logo removed");LOGO=""}catch(err){return}break}
+    case"rrange":R.from=b.dataset.a;R.to=b.dataset.b;break;
+    case"export":{const M=R.data&&repModel();if(!M)return;const f=b.dataset.f,label=b.textContent;b.disabled=true;b.textContent="Preparing…";
+      try{await ({pdf:exportPDF,docx:exportDOCX,xlsx:exportXLSX}[f])(M);toast("Report downloaded")}catch(err){console.error(err);toast(err.message||"Could not make the file")}
+      b.disabled=false;b.textContent=label;return}
     case"authmode":authMode=b.dataset.v;authErr="";renderAuth();return;
     case"signout":signOut();return;
     case"retry":document.getElementById("view").innerHTML=`<div class="loading">Loading…</div>`;boot();return;
@@ -572,8 +761,6 @@ document.addEventListener("click",async e=>{
     case"npcreate":{const n=document.getElementById("npname").value.trim();if(!n){toast("Give the project a name");return}
       try{const j=await send("createProject",{teamId:TEAM.id,name:n,msName:document.getElementById("npms").value.trim(),msDate:document.getElementById("npdate").value},`${n} created`);
         S.cur=j.projectId;S.tab="main";draft=null;await reload()}catch(err){}return}
-    case"copy":{const rows=histRows();const tsv=["Date\tTime\tWho\tWhat",...rows.map(e=>[dstr(e.at),new Date(e.at).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}),nm(e.who),e.txt].join("\t"))].join("\n");
-      navigator.clipboard.writeText(tsv).then(()=>toast(`Copied ${rows.length} rows. Paste into Excel`),()=>toast("Copy is blocked here. Select the list and copy it"));return}
   }
   render();
 });
@@ -595,11 +782,13 @@ document.addEventListener("change",e=>{
   if(id==="dms"){draft.ms=e.target.value;return}
   if(id==="dduedate"){if(e.target.value){draft.due=e.target.value;draft.man.due=true;reChips()}return}
   if(id==="msdate"){msForm.date=e.target.value;return}
-  if(id==="projsel"){if(e.target.value==="__new"){S.tab="newproj";render()}else{S.cur=e.target.value;S.tab="main";S.filter=null;draft=null;uf={q:"",about:"all"};reload()}return}
+  if(id==="projsel"){if(e.target.value==="__new"){S.tab="newproj";render()}else{S.cur=e.target.value;S.tab="main";S.filter=null;draft=null;EDIT=null;uf={q:"",about:"all"};reload()}return}
   if(id==="teamsel"){TEAM=TEAMS.find(t=>t.id===e.target.value);S.cur=null;S.tab="main";draft=null;lastInvite=null;reload();return}
-  if(id==="hwho"){hf.who=e.target.value;render()}
-  if(id==="hfrom"){hf.from=e.target.value;render()}
-  if(id==="hto"){hf.to=e.target.value;render()}
+  if(id==="rfrom"&&e.target.value){R.from=e.target.value;render()}
+  if(id==="rto"&&e.target.value){R.to=e.target.value;render()}
+  if(id==="rscope"){R.scope=e.target.value;render()}
+  if(id==="rwho"){R.who=e.target.value;render()}
+  if(id==="set-logo"&&e.target.files[0]){shrinkLogo(e.target.files[0]).then(u=>send("editTeam",{teamId:TEAM.id,logo:u},"Logo saved").then(()=>{LOGO=u;render()})).catch(err=>toast(err.message))}
 });
 document.addEventListener("keydown",e=>{
   const id=e.target.id;
@@ -608,5 +797,5 @@ document.addEventListener("keydown",e=>{
   if(id&&id.startsWith("ni-")&&e.key==="Enter"){e.preventDefault();document.querySelector(`[data-act="additem"][data-ms="${id.slice(3)}"]`).click()}
 });
 /* refresh every minute while nobody is typing */
-setInterval(()=>{const a=document.activeElement;if(TOKEN&&TEAM&&!document.hidden&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&saving===0&&!S.open)reload()},60000);
+setInterval(()=>{const a=document.activeElement;if(TOKEN&&TEAM&&!document.hidden&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&saving===0&&!S.open&&!EDIT&&S.tab!=="history")reload()},60000);
 boot();
