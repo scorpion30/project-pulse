@@ -327,3 +327,9 @@ input[type=text],input[type=date],select,textarea{font:inherit;border:1px solid 
 .rst.doing{background:#e3ecfd;color:#1f56c2}
 .rfoot{margin-top:24px;padding-top:10px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:11px;text-align:center}
 @media (max-width:700px){.report{padding:18px}.rtiles{grid-template-columns:repeat(3,1fr)}.rhead{flex-direction:column;align-items:flex-start}}
+
+/* task timing */
+.tline{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+.tline b{color:var(--teal);font-weight:600}.tline b.no{color:var(--red)}.tline i{font-style:normal;opacity:.8}
+.numin{width:58px;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+#dduetime{font:inherit;font-size:14px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}

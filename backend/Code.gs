@@ -11,7 +11,7 @@ const SCHEMA = {
   Members:    ['teamId','userId','role','color','joinedAt'],
   Invites:    ['code','teamId','role','createdBy','createdAt','usedBy'],
   Projects:   ['id','teamId','name','createdBy','createdAt'],
-  Tasks:      ['id','projectId','title','to','by','at','due','about','ms','deliv','status','seenAt','stuckOn','stuckNote','doneAt','kudos'],
+  Tasks:      ['id','projectId','title','to','by','at','due','about','ms','deliv','status','seenAt','stuckOn','stuckNote','doneAt','kudos','dueAt','startedAt'],
   Updates:    ['id','projectId','by','at','about','text','pinned','seenBy'],
   Milestones: ['id','projectId','name','date','items'],
   Log:        ['at','projectId','who','txt']
@@ -74,6 +74,8 @@ function remove_(name, obj) { sheet_(name).deleteRow(obj._row); }
 function strip_(o) { const c = Object.assign({}, o); delete c._row; return c; }
 function id_() { return Utilities.getUuid().replace(/-/g, '').slice(0, 10); }
 function now_() { return Date.now(); }
+function dueAt_(v) { const n = Number(v); return n > 1e12 && n < 1e13 ? Math.round(n) : ''; }
+function headers_(name) { const sh = sheet_(name), h = SCHEMA[name]; if (sh.getLastColumn() < h.length) sh.getRange(1, 1, 1, h.length).setValues([h]).setFontWeight('bold').setBackground('#141b2b').setFontColor('#ffffff'); }
 function num_(v) { return v === '' || v === null || v === undefined ? null : Number(v); }
 function list_(v) { return String(v || '').split(',').map(s => s.trim()).filter(Boolean); }
 
@@ -117,7 +119,7 @@ function clean_(s, max) { return String(s || '').trim().slice(0, max || 500); }
 function taskOut_(t) {
   return {id: t.id, title: t.title, to: t.to, by: t.by, at: num_(t.at), due: t.due, about: t.about || '', ms: t.ms || '',
     deliv: String(t.deliv) === 'true', status: t.status, seenAt: num_(t.seenAt), stuckOn: t.stuckOn || '', stuckNote: t.stuckNote || '',
-    doneAt: num_(t.doneAt), kudos: list_(t.kudos)};
+    doneAt: num_(t.doneAt), kudos: list_(t.kudos), dueAt: num_(t.dueAt), startedAt: num_(t.startedAt)};
 }
 function updOut_(u) { return {id: u.id, by: u.by, at: num_(u.at), about: u.about || '', text: u.text, pinned: String(u.pinned) === 'true', seenBy: list_(u.seenBy)}; }
 function msOut_(m) { let items = []; try { items = JSON.parse(m.items || '[]'); } catch (e) {} return {id: m.id, name: m.name, date: m.date, items}; }
@@ -201,10 +203,11 @@ const ACTIONS = {
   createTasks(b, user) {
     const ctx = project_(user, b.projectId); needMgr_(ctx);
     const team = rows_('Members').filter(m => m.teamId === ctx.p.teamId).map(m => m.userId);
+    headers_('Tasks');
     const made = (b.tasks || []).slice(0, 50).map(x => {
       if (!team.includes(x.to)) throw new Error('That person is not on this team');
       const t = {id: id_(), projectId: b.projectId, title: clean_(x.title, 300), to: x.to, by: user.id, at: now_(), due: clean_(x.due, 10),
-        about: clean_(x.about, 80), ms: clean_(x.ms, 20), deliv: !!x.deliv, status: 'new', seenAt: '', stuckOn: '', stuckNote: '', doneAt: '', kudos: ''};
+        about: clean_(x.about, 80), ms: clean_(x.ms, 20), deliv: !!x.deliv, status: 'new', seenAt: '', stuckOn: '', stuckNote: '', doneAt: '', kudos: '', dueAt: dueAt_(x.dueAt), startedAt: ''};
       insert_('Tasks', t); log_(b.projectId, user.id, x.logTxt || ('assigned “' + t.title + '”'));
       return taskOut_(t);
     });
@@ -216,7 +219,7 @@ const ACTIONS = {
     if (['got','start','done','stuck','unstuck'].includes(a) && !mine) throw new Error('Only the person on this task can do that');
     if (['kudos','reopen'].includes(a)) needMgr_(ctx);
     if (a === 'got') t.seenAt = now_();
-    if (a === 'start') { t.status = 'doing'; if (!t.seenAt) t.seenAt = now_(); }
+    if (a === 'start') { t.status = 'doing'; if (!t.seenAt) t.seenAt = now_(); if (!t.startedAt) t.startedAt = now_(); }
     if (a === 'done') { t.status = 'done'; t.doneAt = Math.min(Number(b.doneAt) || now_(), now_()); }
     if (a === 'stuck') { t.status = 'stuck'; t.stuckOn = clean_(b.stuckOn, 60); t.stuckNote = clean_(b.stuckNote, 200); }
     if (a === 'unstuck') t.status = 'doing';
@@ -302,8 +305,9 @@ const ACTIONS = {
       const v = clean_(b[k], max); if (k === 'title' && !v) throw new Error('The task needs a title');
       if (String(t[k] || '') !== v) { changes.push(k); t[k] = v; }
     });
+    if (b.dueAt !== undefined) { const v = dueAt_(b.dueAt); if (String(t.dueAt || '') !== String(v)) { changes.push('dueAt'); t.dueAt = v; } }
     if (b.deliv !== undefined) t.deliv = !!b.deliv;
-    if (changes.includes('to')) { t.seenAt = ''; if (t.status === 'stuck') t.status = 'doing'; }
+    if (changes.includes('to')) { t.seenAt = ''; t.startedAt = ''; if (t.status === 'stuck') t.status = 'doing'; }
     save_('Tasks', t);
     if (b.logTxt && changes.length) log_(t.projectId, user.id, b.logTxt);
     return {task: taskOut_(t)};

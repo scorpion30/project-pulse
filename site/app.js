@@ -55,8 +55,21 @@ function toast(t){const el=document.getElementById("toast");el.textContent=t;el.
 const weekDone=()=>S.tasks.filter(k=>k.status==="done"&&k.doneAt>Date.now()-7*DAY);
 const MS=id=>S.ms.find(m=>m.id===id);
 const upcoming=()=>S.ms.filter(m=>daysTo(m.date)>=0).sort((a,b)=>a.date.localeCompare(b.date));
-const isLate=k=>k.status!=="done"&&k.due&&daysTo(k.due)<0;
-const onTimeK=k=>k.doneAt<=new Date(k.due+"T23:59").getTime();
+const isLate=k=>k.status!=="done"&&(k.dueAt?Date.now()>k.dueAt:!!k.due&&daysTo(k.due)<0);
+const onTimeK=k=>k.doneAt<=(k.dueAt||new Date(k.due+"T23:59").getTime());
+const fullT=ms=>ms?dShort(ms)+" "+tShort(ms):"";
+const hm=ms=>new Date(ms).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+function durTxt(ms){const m=Math.round(Math.abs(ms)/6e4),d=Math.floor(m/1440),h=Math.floor(m%1440/60),mi=m%60;if(m<1)return"under a minute";return d?`${d}d${h?" "+h+"h":""}`:h?`${h}h${mi?" "+mi+"m":""}`:`${mi} min`}
+const dayWord=ms=>{const d=daysTo(dstr(ms));return d===0?"today":d===1?"tomorrow":d===-1?"yesterday":new Date(ms).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})};
+const shortWhen=ms=>dayWord(ms)+" "+hm(ms);
+function dueK(k){if(!k.dueAt)return dueInfo(k.due);const left=k.dueAt-Date.now();
+  if(left<0)return{c:"late",t:`${durTxt(left)} late`};return{c:left<24*H?"today":"",t:`⏱ ${durTxt(left)} left · by ${shortWhen(k.dueAt)}`}}
+function tline(k){const s=[`Given ${shortWhen(k.at)}`];
+  if(k.seenAt)s.push(`<b>Got it ${shortWhen(k.seenAt)}</b> <i>(${durTxt(k.seenAt-k.at)} after)</i>`);else s.push(`<b class="no">Not opened yet</b>`);
+  if(k.startedAt)s.push(`Started ${shortWhen(k.startedAt)}`);if(k.status==="done"&&k.doneAt)s.push(`Done ${shortWhen(k.doneAt)}`);
+  return `<div class="tline">${s.join(" → ")}</div>`}
+const fmtDue=(due,at)=>at?shortWhen(at):due?new Date(due+"T12:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"no date";
+const dueCell=k=>k.dueAt?new Date(k.dueAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})+" "+hm(k.dueAt):k.due?new Date(k.due+"T12:00").toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):"";
 function logLocal(txt){S.log.push({at:Date.now(),who:ME.id,txt})}
 
 /* ---------- milestones & warnings ---------- */
@@ -74,6 +87,9 @@ function myWarnings(uid){
   const out=[];
   S.tasks.filter(k=>k.to===uid&&k.status!=="done"&&k.due).forEach(k=>{
     const d=daysTo(k.due),m=MS(k.ms),ml=m?daysTo(m.date):null;
+    if(k.dueAt){const left=k.dueAt-Date.now(),ms2=m&&ml>=0?` ${m.name} is ${ml===0?"today":ml===1?"tomorrow":"in "+ml+" days"}.`:"";
+      if(left<0)out.push({c:"red",b:`“${k.title}” is ${durTxt(left)} late.`,t:`${ms2} Finish it, or tap “I'm stuck” so ${nm(k.by)} can help.`});
+      else if(left<24*H)out.push({c:"amber",b:`“${k.title}”: ${durTxt(left)} left (by ${shortWhen(k.dueAt)}).`,t:ms2||" Keep going!"});return}
     const msTxt=m&&ml>=0?` ${m.name} is ${ml===0?"today":ml===1?"tomorrow":"in "+ml+" days"}.`:"";
     if(d<0)out.push({c:"red",b:`“${k.title}” is ${-d} day${d<-1?"s":""} late.`,t:`${msTxt} Finish it, or tap “I'm stuck” so ${nm(k.by)} can help.`});
     else if(d<=1)out.push({c:"amber",b:`“${k.title}” is due ${d===0?"today":"tomorrow"}.`,t:msTxt||" Keep going!"});
@@ -189,7 +205,7 @@ function renderTop(){
 
 /* ---------- team view ---------- */
 function taskCard(k){
-  const d=dueInfo(k.due),open=S.open&&S.open.id===k.id?S.open.kind:null,m=MS(k.ms);
+  const d=dueK(k),open=S.open&&S.open.id===k.id?S.open.kind:null,m=MS(k.ms);
   let acts="";
   if(k.to===ME.id){
     if(k.status==="new")acts=`<button class="btn go" data-act="start" data-id="${k.id}">Start</button>`;
@@ -209,6 +225,7 @@ function taskCard(k){
       ${k.status==="done"?`<span class="donewhen">Finished ${fmtWhen(k.doneAt)}${k.due&&onTimeK(k)?" · on time":""}</span>`:""}
       ${k.status==="stuck"?`<span class="note">Waiting on ${esc(k.stuckOn)}${k.stuckNote?": "+esc(k.stuckNote):""}</span>`:""}
       ${k.kudos.map(x=>`<span class="kudo">👏 ${esc(nm(x))}</span>`).join("")}</div>
+    ${tline(k)}
     ${acts?`<div class="acts">${acts}</div>`:""}${drawer}</article>`;
 }
 function nextDelivery(){const m=upcoming()[0];if(!m)return `<div class="hint">No upcoming deliveries.</div>`;const i=msInfo(m);
@@ -235,11 +252,11 @@ function renderTeam(){
   const badges=[];if(onTime>=3)badges.push(`${onTime} on time this week`);if(kud)badges.push(`${kud} kudos`);if(myWeek.length&&onTime===myWeek.length)badges.push("All on time");
   return `
   <h1>${greet}, ${esc(m.name)}.</h1>
-  <p class="sub">${next?`Next up: <b>${esc(next.title)}</b> · ${dueInfo(next.due).t.toLowerCase()}.`:"Nothing open. Enjoy the calm."} ${unseen.length?`<b>${unseen.length} new</b> from your managers.`:""}</p>
+  <p class="sub">${next?`Next up: <b>${esc(next.title)}</b> · ${dueK(next).t.toLowerCase()}.`:"Nothing open. Enjoy the calm."} ${unseen.length?`<b>${unseen.length} new</b> from your managers.`:""}</p>
   <div class="layout"><div class="stack">
     ${warnBox(myWarnings(m.id))}
     ${unseen.length?`<section class="inbox"><h2>New for you <span class="n">${unseen.length}</span></h2>
-      ${unseen.map(k=>`<div class="nitem">${av(k.by)}<div class="tx"><b>${esc(k.title)}</b><span>${esc(nm(k.by))} · ${ago(k.at)} · ${esc(k.about||"Whole project")} · ${dueInfo(k.due).t}</span></div><button class="btn go" data-act="got" data-id="${k.id}">Got it</button></div>`).join("")}</section>`:""}
+      ${unseen.map(k=>`<div class="nitem">${av(k.by)}<div class="tx"><b>${esc(k.title)}</b><span>${esc(nm(k.by))} · ${ago(k.at)} · ${esc(k.about||"Whole project")} · ${dueK(k).t}</span></div><button class="btn go" data-act="got" data-id="${k.id}">Got it</button></div>`).join("")}</section>`:""}
     <h2 style="margin-top:6px">My tasks <span class="n">${active.length}</span></h2>
     ${active.length?active.map(taskCard).join(""):`<div class="panel empty">All clear. New tasks from your managers show up here.</div>`}
     ${done.length?`<h2 style="margin-top:10px">Recently finished</h2>${done.map(taskCard).join("")}`:""}
@@ -257,7 +274,7 @@ function renderTeam(){
 }
 
 /* ---------- manager view ---------- */
-const newDraft=()=>({mode:"task",text:"",to:null,due:null,about:"",ms:(upcoming()[0]||{}).id||"",man:{},lineTo:{}});
+const newDraft=()=>({mode:"task",text:"",to:null,due:null,finH:null,time:"",about:"",ms:(upcoming()[0]||{}).id||"",man:{},lineTo:{}});
 let draft=null;
 const draftLines=()=>draft.text.split("\n").map(s=>s.trim()).filter(Boolean);
 const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
@@ -273,6 +290,8 @@ function parseDraft(t){
   if(known)r.about=known;else if(tw)r.about=tw[0].replace(/\b\w/g,c=>c.toUpperCase());
   return r;
 }
+const FINOPTS=[["2 hours",2],["4 hours",4],["1 day",24],["2 days",48]];
+const finBy=()=>draft.finH?`Deadline: ${shortWhen(Date.now()+draft.finH*H)}`:draft.time&&draft.due?`Deadline: ${shortWhen(new Date(draft.due+"T"+draft.time).getTime())}`:"";
 const DUEOPTS=()=>{const d=new Date(),fri=(5-d.getDay()+7)%7||7;return[["Today",0],["Tomorrow",1],["Friday",fri],["Next week",7]].map(([l,o])=>[l,dstr(Date.now()+o*DAY)])};
 function msSelect(id){return `<select id="${id}" aria-label="Delivery"><option value="">No delivery</option>${upcoming().map(m=>`<option value="${m.id}" ${draft.ms===m.id?"selected":""}>${esc(m.name)} · ${dueInfo(m.date).t.replace("Due ","")}</option>`).join("")}</select>`}
 const inviteLink=`<button class="chip" data-act="tab" data-t="people">+ Invite someone</button>`;
@@ -292,7 +311,11 @@ function composerChips(){
   return `
    <div class="crow"><span class="lbl">Who</span>${team().map(p=>`<button class="pick" data-act="dto" data-id="${p.id}" aria-pressed="${draft.to===p.id}" aria-label="Assign to ${esc(p.name)}" title="${esc(p.name)}">${av(p.id)}</button>`).join("")||`<span class="hint">No team members yet.</span>`}
      ${inviteLink}${draft.to?`<span class="chip ${auto("to")?"auto":""}" style="cursor:default">For ${esc(nm(draft.to))}${auto("to")?" · picked from text":""}</span>`:""}</div>
-   <div class="crow"><span class="lbl">Due</span>${DUEOPTS().map(([l,v])=>`<button class="chip ${auto("due")&&draft.due===v?"auto":""}" data-act="ddue" data-v="${v}" aria-pressed="${draft.due===v&&!auto("due")}">${l}</button>`).join("")}<input type="date" id="dduedate" aria-label="Other date" value="${draft.due&&!DUEOPTS().some(o=>o[1]===draft.due)?draft.due:""}"></div>
+   <div class="crow"><span class="lbl">Due</span>${DUEOPTS().map(([l,v])=>`<button class="chip ${auto("due")&&draft.due===v?"auto":""}" data-act="ddue" data-v="${v}" aria-pressed="${draft.due===v&&!auto("due")}">${l}</button>`).join("")}<input type="date" id="dduedate" aria-label="Other date" value="${draft.due&&!DUEOPTS().some(o=>o[1]===draft.due)?draft.due:""}"><span class="hint">at</span><input type="time" id="dduetime" aria-label="Time (optional)" value="${draft.time||""}"></div>
+   <div class="crow"><span class="lbl">Finish in</span>${FINOPTS.map(([l,h])=>`<button class="chip" data-act="dfin" data-h="${h}" aria-pressed="${draft.finH===h}">${l}</button>`).join("")}
+     <input type="number" min="0" max="90" id="dfd" class="numin" placeholder="0" value="${draft.finH?Math.floor(draft.finH/24)||"":""}" aria-label="Days"><span class="hint">days</span>
+     <input type="number" min="0" max="23" id="dfh" class="numin" placeholder="0" value="${draft.finH?draft.finH%24||"":""}" aria-label="Hours"><span class="hint">hours</span>
+     <span class="hint" id="dfinby" style="color:var(--accent)">${finBy()}</span></div>
    <div class="crow"><span class="lbl">About</span><input type="text" class="aboutin" id="dabout" list="aboutlist" placeholder="Anything: Tower 4, lobby ceiling, client comments…" value="${esc(draft.about)}" aria-label="What it's about">${auto("about")?`<span class="hint" style="color:var(--accent)">picked from text</span>`:""}</div>
    <div class="crow"><span class="lbl">For</span>${msSelect("dms")}</div>`;
 }
@@ -342,7 +365,8 @@ function taskEditor(k){
   return `<div class="editbox">
     <label>Task<input id="et-title" value="${esc(k.title)}"></label>
     <div class="erow"><label>Who<select id="et-to">${who.map(p=>`<option value="${p.id}" ${p.id===k.to?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
-      <label>Due<input type="date" id="et-due" value="${k.due||""}"></label></div>
+      <label>Due<input type="date" id="et-due" value="${k.due||""}"></label>
+      <label>Time <span style="font-weight:400">(optional)</span><input type="time" id="et-time" value="${k.dueAt?hm(k.dueAt):""}"></label></div>
     <div class="erow"><label>About<input id="et-about" list="aboutlist" value="${esc(k.about)}" placeholder="Whole project"></label>
       <label>Delivery<select id="et-ms"><option value="">No delivery</option>${S.ms.map(x=>`<option value="${x.id}" ${x.id===k.ms?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label></div>
     <div class="acts"><button class="btn sm go" data-act="savetask" data-id="${k.id}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button><span class="spacer"></span>${delBtn("deltask","t"+k.id,`data-id="${k.id}"`)}</div></div>`;
@@ -350,7 +374,7 @@ function taskEditor(k){
 const editLink=(kind,id,extra)=>`<button class="linkbtn edl" data-act="edit" data-kind="${kind}" data-id="${id}" ${extra||""} title="Edit">✎ Edit</button>`;
 function miniCard(k,on){
   if(isEd("task",k.id))return `<div class="mini">${taskEditor(k)}</div>`;
-  const m=me(),d=dueInfo(k.due);let a="";
+  const m=me(),d=dueK(k);let a="";
   if(k.status==="stuck")a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(k.stuckOn)}">Chase ${esc(k.stuckOn)}</button>`;
   if(k.status==="new"&&!k.seenAt)a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(nm(k.to))}">Nudge ${esc(nm(k.to))}</button>`;
   if(k.status==="done")a=k.kudos.includes(m.id)?`<span class="kudo">👏 Sent</span>`:`<button class="btn sm go" data-act="kudos" data-id="${k.id}">👏 Kudos</button><button class="btn sm quiet" data-act="reopen" data-id="${k.id}">Reopen</button>`;
@@ -358,7 +382,8 @@ function miniCard(k,on){
     <div class="row">${av(k.to,1)}<b style="color:var(--ink)">${esc(nm(k.to))}</b><span style="margin-left:auto">${aboutTag(k.about)}</span></div>
     <div class="t">${esc(k.title)}</div>
     <div class="row">${k.status==="done"?`<span class="donewhen">Done ${ago(k.doneAt)}</span>`:`<span class="tag due ${d.c}">${d.t}</span>`}
-      ${k.status==="new"?(k.seenAt?`<span class="eye yes">✓ Got it</span>`:`<span class="eye no">Not opened yet</span>`):""}${k.status==="stuck"?`<span class="note">on ${esc(k.stuckOn)}</span>`:""}</div>
+      ${k.status==="stuck"?`<span class="note">on ${esc(k.stuckOn)}</span>`:""}</div>
+    ${tline(k)}
     <div class="acts">${a}<span class="spacer"></span>${editLink("task",k.id)}</div></div>`;
 }
 
@@ -384,7 +409,7 @@ function renderSchedule(){
       <div class="tags"><b>${i.pct}% ready</b><span class="hint">· ${i.got} of ${i.total} items · ${i.total-i.got} left</span>${i.late?`<span class="tag due late">${i.late} late</span>`:""}${i.stuck?`<span class="tag due late">${i.stuck} stuck</span>`:""}</div>
       <div class="mgrid">
         <div><h4>What we deliver</h4><div class="dl">
-          ${i.ts.filter(k=>k.deliv).map(k=>isEd("task",k.id)?taskEditor(k):`<div class="ditem">${av(k.to,1)}<span class="x ${k.status==="done"?"dn":""}">${esc(k.title)}</span><span class="hint">${esc(nm(k.to))} · ${k.status==="done"?"done "+ago(k.doneAt):dueInfo(k.due).t.replace("Due ","")}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}${m.mgr?editLink("task",k.id):""}</div>`).join("")}
+          ${i.ts.filter(k=>k.deliv).map(k=>isEd("task",k.id)?taskEditor(k):`<div class="ditem">${av(k.to,1)}<span class="x ${k.status==="done"?"dn":""}">${esc(k.title)}</span><span class="hint">${esc(nm(k.to))} · ${k.status==="done"?"done "+ago(k.doneAt):dueK(k).t.replace("Due ","")}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}${m.mgr?editLink("task",k.id):""}</div>`).join("")}
           ${x.items.map((it,j)=>{if(isEd("item",x.id,j))return `<div class="crow assignrow"><input id="ei-text" value="${esc(it.t)}" aria-label="Item name"><button class="btn sm go" data-act="saveitem" data-ms="${x.id}" data-j="${j}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button>${delBtn("delitem","i"+x.id+j,`data-ms="${x.id}" data-j="${j}"`,"Remove")}</div>`;const op=S.open&&S.open.kind==="assign"&&S.open.ms===x.id&&S.open.j===j;
             return `<div class="ditem"><label class="${it.ok?"ok":""}"><input type="checkbox" data-act="tick" data-ms="${x.id}" data-j="${j}" ${it.ok?"checked":""} ${m.mgr?"":"disabled"}><span>${esc(it.t)}</span></label>
             ${m.mgr&&!it.ok?`<button class="linkbtn" data-act="assignopen" data-ms="${x.id}" data-j="${j}">${op?"Cancel":"Give to someone"}</button>`:""}${m.mgr?editLink("item",x.id,`data-j="${j}"`):""}</div>
@@ -494,8 +519,8 @@ function reportHTML(M){
     ${M.log.length?`<table class="rtable"><thead><tr><th style="width:92px">Date</th><th style="width:52px">Time</th>${M.multi?"<th>Project</th>":""}<th style="width:120px">Who</th><th>What changed</th></tr></thead><tbody>
       ${M.log.map(e=>`<tr><td>${dShort(e.at)}</td><td>${tShort(e.at)}</td>${M.multi?`<td>${esc(M.pn(e.projectId))}</td>`:""}<td>${esc(nm(e.who))}</td><td>${esc(e.txt)}</td></tr>`).join("")}</tbody></table>`:`<p class="hint">Nothing changed in these dates.</p>`}
     <h3>Task status today</h3>
-    ${M.tasks.length?`<table class="rtable"><thead><tr><th>Task</th>${M.multi?"<th>Project</th>":""}<th>Who</th><th>Due</th><th>Status</th><th>Finished</th></tr></thead><tbody>
-      ${M.tasks.map(k=>`<tr><td>${esc(k.title)}</td>${M.multi?`<td>${esc(M.pn(k.projectId))}</td>`:""}<td>${esc(nm(k.to))}</td><td>${k.due?new Date(k.due+"T12:00").toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):""}</td><td><span class="rst ${stLabel(k).toLowerCase()}">${stLabel(k)}</span></td><td>${k.doneAt?new Date(k.doneAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})+(k.due?(onTimeK(k)?" · on time":" · late"):""):""}</td></tr>`).join("")}</tbody></table>`:`<p class="hint">No tasks yet.</p>`}
+    ${M.tasks.length?`<table class="rtable"><thead><tr><th>Task</th>${M.multi?"<th>Project</th>":""}<th>Who</th><th>Got it</th><th>Due</th><th>Status</th><th>Finished</th></tr></thead><tbody>
+      ${M.tasks.map(k=>`<tr><td>${esc(k.title)}</td>${M.multi?`<td>${esc(M.pn(k.projectId))}</td>`:""}<td>${esc(nm(k.to))}</td><td>${k.seenAt?dShort(k.seenAt)+" "+tShort(k.seenAt):"Not yet"}</td><td>${dueCell(k)}</td><td><span class="rst ${stLabel(k).toLowerCase()}">${stLabel(k)}</span></td><td>${k.doneAt?new Date(k.doneAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})+(k.due?(onTimeK(k)?" · on time":" · late"):""):""}</td></tr>`).join("")}</tbody></table>`:`<p class="hint">No tasks yet.</p>`}
     <div class="rfoot">Generated with Project Pulse · ${new Date().toLocaleString("en-GB")}</div></div>`;
 }
 function renderHistory(){
@@ -549,9 +574,9 @@ async function exportXLSX(M){
   M.log.forEach(e=>{const row=ws.getRow(r++);row.values=M.multi?[dShort(e.at),tShort(e.at),M.pn(e.projectId),nm(e.who),e.txt]:[dShort(e.at),tShort(e.at),nm(e.who),e.txt];row.getCell(cols.length).alignment={wrapText:true,vertical:"top"}});
   ws.autoFilter={from:{row:top,column:1},to:{row:Math.max(top,r-1),column:cols.length}};
   const styleHead=sh=>sh.getRow(1).eachCell(c=>{c.font=head.font;c.fill=head.fill;c.alignment=head.alignment});
-  const t2=wb.addWorksheet("Tasks");const tc=["Task",...(M.multi?["Project"]:[]),"Who","About","Due","Status","Finished","On time"];
+  const t2=wb.addWorksheet("Tasks");const tc=["Task",...(M.multi?["Project"]:[]),"Who","About","Given","Got it","Started","Due","Status","Finished","On time"];
   t2.columns=tc.map(c=>({header:c,width:c==="Task"?50:c==="Project"?22:14}));styleHead(t2);
-  M.tasks.forEach(k=>t2.addRow([k.title,...(M.multi?[M.pn(k.projectId)]:[]),nm(k.to),k.about||"Whole project",k.due||"",stLabel(k),k.doneAt?dShort(k.doneAt):"",k.doneAt&&k.due?(onTimeK(k)?"Yes":"No"):""]));
+  M.tasks.forEach(k=>t2.addRow([k.title,...(M.multi?[M.pn(k.projectId)]:[]),nm(k.to),k.about||"Whole project",fullT(k.at),fullT(k.seenAt),fullT(k.startedAt),dueCell(k),stLabel(k),fullT(k.doneAt),k.doneAt&&k.due?(onTimeK(k)?"Yes":"No"):""]));
   t2.autoFilter={from:{row:1,column:1},to:{row:1,column:tc.length}};
   if(M.ms.length){const t3=wb.addWorksheet("Deliveries");t3.columns=[{header:"Delivery",width:30},...(M.multi?[{header:"Project",width:22}]:[]),{header:"Date",width:14},{header:"Ready %",width:10},{header:"Status",width:12}];styleHead(t3);
     M.ms.forEach(x=>t3.addRow([x.name,...(M.multi?[x.project]:[]),x.date,x.pct,x.state]))}
@@ -576,7 +601,7 @@ async function exportDOCX(M){
   if(M.log.length)kids.push(table(["Date","Time",...(M.multi?["Project"]:[]),"Who","What changed"],M.log.map(e=>[dShort(e.at),tShort(e.at),...(M.multi?[M.pn(e.projectId)]:[]),nm(e.who),e.txt]),M.multi?[13,8,16,15,48]:[14,9,17,60]));
   else kids.push(para("Nothing changed in these dates.",{color:"6B7280"}));
   kids.push(h("Task status today"));
-  if(M.tasks.length)kids.push(table(["Task",...(M.multi?["Project"]:[]),"Who","Due","Status","Finished"],M.tasks.map(k=>[k.title,...(M.multi?[M.pn(k.projectId)]:[]),nm(k.to),k.due||"",stLabel(k),k.doneAt?dShort(k.doneAt):""]),M.multi?[34,16,16,10,10,14]:[42,18,12,12,16]));
+  if(M.tasks.length)kids.push(table(["Task",...(M.multi?["Project"]:[]),"Who","Got it","Due","Status","Finished"],M.tasks.map(k=>[k.title,...(M.multi?[M.pn(k.projectId)]:[]),nm(k.to),fullT(k.seenAt)||"Not yet",dueCell(k),stLabel(k),k.doneAt?dShort(k.doneAt):""]),M.multi?[26,14,13,13,12,9,13]:[32,15,15,14,10,14]));
   const doc=new D.Document({creator:"Project Pulse",title:M.title+" report",sections:[{properties:{page:{margin:{top:900,bottom:900,left:900,right:900}}},
     footers:{default:new D.Footer({children:[new D.Paragraph({alignment:D.AlignmentType.CENTER,children:[txt("Project Pulse · page ",{size:16,color:"9CA3AF"}),new D.TextRun({children:[D.PageNumber.CURRENT],size:16,color:"9CA3AF"})]})]})},children:kids}]});
   saveBlob(await D.Packer.toBlob(doc),fileBase(M)+".docx");
@@ -661,10 +686,10 @@ document.addEventListener("click",async e=>{
   switch(a){
     case"edit":EDIT={kind:b.dataset.kind,id:b.dataset.id,j:b.dataset.j!==undefined?+b.dataset.j:undefined};CONFIRM=null;S.open=null;break;
     case"canceledit":EDIT=null;CONFIRM=null;break;
-    case"savetask":{const v=id=>document.getElementById(id).value.trim();const nt={title:v("et-title"),to:v("et-to"),due:v("et-due"),about:v("et-about"),ms:v("et-ms")};
+    case"savetask":{const v=id=>document.getElementById(id).value.trim();const nt={title:v("et-title"),to:v("et-to"),due:v("et-due"),about:v("et-about"),ms:v("et-ms")};const tm=v("et-time");nt.dueAt=tm&&nt.due?new Date(nt.due+"T"+tm).getTime():"";
       if(!nt.title){toast("The task needs a title");return}
       const ch=[];if(nt.title!==k.title)ch.push(`renamed it to “${nt.title}”`);if(nt.to!==k.to)ch.push(`moved it from ${nm(k.to)} to ${nm(nt.to)}`);
-      if(nt.due!==(k.due||""))ch.push(`due ${fmtD(k.due)} → ${fmtD(nt.due)}`);if(nt.about!==(k.about||""))ch.push(`about “${nt.about||"Whole project"}”`);
+      if(nt.due!==(k.due||"")||String(nt.dueAt||"")!==String(k.dueAt||""))ch.push(`due ${fmtDue(k.due,k.dueAt)} → ${fmtDue(nt.due,nt.dueAt)}`);if(nt.about!==(k.about||""))ch.push(`about “${nt.about||"Whole project"}”`);
       if(nt.ms!==(k.ms||""))ch.push(nt.ms?`linked to ${MS(nt.ms).name}`:"removed from its delivery");
       if(!ch.length){EDIT=null;break}
       try{const j=await send("editTask",Object.assign({id:k.id,logTxt:`edited “${k.title}”: ${ch.join(", ")}`},nt),"Task updated");Object.assign(k,j.task);EDIT=null}catch(err){return}break}
@@ -702,7 +727,7 @@ document.addEventListener("click",async e=>{
     case"jointeam":{try{await api("joinTeam",{invite:document.getElementById("j-code").value});await boot()}catch(err){toast(err.message)}return}
     case"tab":S.tab=b.dataset.t;window.scrollTo(0,0);break;
     case"got":k.seenAt=Date.now();logLocal(`got “${k.title}”`);taskDo(k,"got",null,`got “${k.title}”`,`${nm(k.by)} can see you've got it`);break;
-    case"start":k.status="doing";if(!k.seenAt)k.seenAt=Date.now();taskDo(k,"start",null,`started “${k.title}”`,"Started. Good luck!");break;
+    case"start":k.status="doing";if(!k.seenAt)k.seenAt=Date.now();if(!k.startedAt)k.startedAt=Date.now();taskDo(k,"start",null,`started “${k.title}”`,"Started. Good luck!");break;
     case"open":S.open=S.open&&S.open.id===k.id&&S.open.kind===b.dataset.kind?null:{id:k.id,kind:b.dataset.kind};break;
     case"done":{let at=Date.now();const w=b.dataset.w;
       if(w==="morning"){const d=new Date();d.setHours(10,0,0,0);at=Math.min(d.getTime(),Date.now())}
@@ -724,16 +749,17 @@ document.addEventListener("click",async e=>{
     case"filter":S.filter=S.filter===b.dataset.v?null:b.dataset.v;break;
     case"mode":draft.mode=b.dataset.v;draft.about="";break;
     case"dto":draft.to=b.dataset.id;draft.man.to=true;reChips();return;
-    case"ddue":draft.due=b.dataset.v;draft.man.due=true;reChips();return;
+    case"ddue":draft.due=b.dataset.v;draft.man.due=true;draft.finH=null;reChips();return;
+    case"dfin":{const h=+b.dataset.h;draft.finH=draft.finH===h?null:h;draft.time="";if(draft.finH){draft.due=dstr(Date.now()+draft.finH*H);draft.man.due=true}reChips();return}
     case"sugg":{const el=document.getElementById(b.dataset.target);el.value=b.dataset.v;el.dispatchEvent(new Event("input",{bubbles:true}));return}
     case"post":{const text=draft.text.trim();if(!text){toast("Write something first");document.getElementById("ctext").focus();return}
       b.disabled=true;
       try{
         if(draft.mode==="update"){const j=await send("postUpdate",{projectId:S.cur,text,about:draft.about.trim()},"Posted. Everyone on the team can see it");S.updates.push(j.update)}
         else{const ls=draftLines();
-          const items=ls.length>1?ls.map((l,i)=>{const r=parseDraft(l);return{line:l,to:draft.lineTo[i]||r.to,due:r.due,about:r.about||""}}):[{line:text,to:draft.to,due:draft.due,about:draft.about.trim()}];
+          const items=ls.length>1?ls.map((l,i)=>{const r=parseDraft(l);return{line:l,to:draft.lineTo[i]||r.to,due:r.due,about:r.about||""}}):[{line:text,to:draft.to,due:draft.due,about:draft.about.trim(),dueAt:draft.finH?Date.now()+draft.finH*H:draft.time&&draft.due?new Date(draft.due+"T"+draft.time).getTime():""}];
           const miss=items.findIndex(x=>!x.to);if(miss>=0){toast(ls.length>1?`Pick a person for line ${miss+1}`:"Tap who it's for");b.disabled=false;return}
-          const list=items.map(x=>{const title=cleanTitle(x.line,x.to);return{title,to:x.to,due:x.due||dstr(Date.now()+3*DAY),about:x.about,ms:draft.ms,logTxt:`assigned “${title}” to ${nm(x.to)}`}});
+          const list=items.map(x=>{const title=cleanTitle(x.line,x.to);const due=x.dueAt?dstr(x.dueAt):x.due||dstr(Date.now()+3*DAY);return{title,to:x.to,due,dueAt:x.dueAt||"",about:x.about,ms:draft.ms,logTxt:`assigned “${title}” to ${nm(x.to)}${x.dueAt?", deadline "+shortWhen(x.dueAt):""}`}});
           await giveTasks(list);const names=[...new Set(list.map(x=>nm(x.to)))];toast(list.length>1?`${list.length} tasks sent to ${names.join(", ")}`:`Sent to ${names[0]}`)}
         const keep=draft.mode;draft=newDraft();draft.mode=keep;
       }catch(err){b.disabled=false;return}
@@ -773,6 +799,9 @@ document.addEventListener("input",e=>{
   if(id==="uabout"){udraft.about=e.target.value;return}
   if(id==="cuabout"){draft.about=e.target.value;return}
   if(id==="dabout"){draft.about=e.target.value;draft.man.about=!!e.target.value;return}
+  if(id==="dfd"||id==="dfh"){const dd=+document.getElementById("dfd").value||0,hh=+document.getElementById("dfh").value||0,t=Math.min(dd,90)*24+Math.min(hh,23);
+    draft.finH=t||null;draft.time="";if(t){draft.due=dstr(Date.now()+t*H);draft.man.due=true}document.getElementById("dfinby").textContent=finBy();
+    document.querySelectorAll('[data-act="dfin"]').forEach(x=>x.setAttribute("aria-pressed",String(+x.dataset.h===draft.finH)));const ti=document.getElementById("dduetime");if(ti)ti.value="";return}
   if(id==="msname"){msForm.name=e.target.value;return}
   if(id==="msitems"){msForm.items=e.target.value;return}
   if(id==="ctext"){draft.text=e.target.value;const r=parseDraft(draft.text);["to","due","about"].forEach(f=>{if(!draft.man[f])draft[f]=r[f]||(f==="about"?"":null)});reChips();
@@ -782,7 +811,8 @@ document.addEventListener("change",e=>{
   const id=e.target.id;
   if(e.target.dataset&&e.target.dataset.line!==undefined){draft.lineTo[+e.target.dataset.line]=e.target.value;reChips();return}
   if(id==="dms"){draft.ms=e.target.value;return}
-  if(id==="dduedate"){if(e.target.value){draft.due=e.target.value;draft.man.due=true;reChips()}return}
+  if(id==="dduedate"){if(e.target.value){draft.due=e.target.value;draft.man.due=true;draft.finH=null;reChips()}return}
+  if(id==="dduetime"){draft.time=e.target.value;if(draft.time){draft.finH=null;if(!draft.due){draft.due=dstr(Date.now());draft.man.due=true}}reChips();return}
   if(id==="msdate"){msForm.date=e.target.value;return}
   if(id==="projsel"){if(e.target.value==="__new"){S.tab="newproj";render()}else{S.cur=e.target.value;S.tab="main";S.filter=null;draft=null;EDIT=null;uf={q:"",about:"all"};reload()}return}
   if(id==="teamsel"){TEAM=TEAMS.find(t=>t.id===e.target.value);S.cur=null;S.tab="main";draft=null;lastInvite=null;reload();return}
