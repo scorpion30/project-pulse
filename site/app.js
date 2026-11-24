@@ -270,7 +270,7 @@ function renderTeam(){
     ${trophyShelf()}
     <div class="panel"><h2>Latest updates <button class="linkbtn" data-act="tab" data-t="updates" style="margin-left:auto">See all</button></h2>
       ${updates.map(u=>`<div class="upd">${av(u.by,1)}<div class="tx">${esc(u.text)}<div class="meta">${esc(nm(u.by))} · ${ago(u.at)}
-        ${u.seenBy.includes(m.id)?`<span style="color:var(--teal);font-weight:600">✓ Seen</span>`:`<button class="btn sm go" data-act="seenupd" data-id="${u.id}">👍 Seen</button>`}</div></div></div>`).join("")||`<div class="hint">No updates yet.</div>`}</div>
+        ${u.seenBy.includes(m.id)?`<span style="color:var(--teal);font-weight:600">✓ Seen</span>`:`<button class="btn sm go" data-act="seenupd" data-id="${u.id}">👍 Seen</button>`}</div></div></div>`).join("")||`<div class="hint">No updates yet.</div>`}<button class="btn sm" data-act="tab" data-t="updates" style="margin-top:10px">+ Tell the team something</button></div>
   </aside></div>`;
 }
 
@@ -474,7 +474,7 @@ function updCard(u){
     <div class="utext">${esc(u.text)}</div>
     <div class="meta"><span class="seen">${others.map(id=>av(id,1)).join("")}</span><span class="hint">Seen by ${others.length} of ${Math.max(PEOPLE.length-1,0)}</span>
       <span style="margin-left:auto;display:flex;gap:6px">${u.seenBy.includes(m.id)?`<span style="color:var(--teal);font-weight:600;font-size:13px">✓ Seen</span>`:`<button class="btn sm go" data-act="seenupd" data-id="${u.id}">👍 Seen</button>`}
-      ${m.mgr?`<button class="btn sm quiet" data-act="pin" data-id="${u.id}">${u.pinned?"Unpin":"Pin"}</button>${editLink("upd",u.id)}`:""}</span></div></article>`;
+      ${m.mgr?`<button class="btn sm quiet" data-act="pin" data-id="${u.id}">${u.pinned?"Unpin":"Pin"}</button>`:""}${m.mgr||u.by===m.id?editLink("upd",u.id):""}</span></div></article>`;
 }
 function updList(){
   const q=uf.q.toLowerCase().trim();
@@ -489,11 +489,11 @@ function renderUpdates(){
   return `<h1>Project updates</h1>
   <p class="sub">Every decision and piece of news for this project, old and new, in one place. Search it any time instead of digging through emails.</p>
   <div class="layout"><div class="stack">
-    ${m.mgr?`<section class="composer"><div class="ctop"><span class="ctitle">Tell everyone</span></div>
+    ${`<section class="composer"><div class="ctop"><span class="ctitle">Tell everyone</span></div>
       <textarea id="utext" rows="2" placeholder="e.g. Client approved the new podium height of 18.5 m" aria-label="Write an update">${esc(udraft.text)}</textarea>
       <div class="crow"><span class="lbl">About</span><input type="text" class="aboutin" id="uabout" list="aboutlist" placeholder="Leave empty for the whole project, or type anything" value="${esc(udraft.about)}" aria-label="What it's about"></div>
       <div class="suggest">${allTags().slice(0,8).map(x=>`<button data-act="sugg" data-target="uabout" data-v="${esc(x)}">${esc(x)}</button>`).join("")}</div>
-      <div class="cfoot"><span class="hint">Type any topic. Ones you used before are suggested.</span><button class="btn go" data-act="upost">Post update</button></div></section>`:""}
+      <div class="cfoot"><span class="hint">Type any topic. Ones you used before are suggested.</span><button class="btn go" data-act="upost">Post update</button></div></section>`}
     <div class="ufilters">
       <input type="search" id="usearch" placeholder="Search updates, e.g. HV room, lifts, naming" value="${esc(uf.q)}" aria-label="Search updates">
       <div class="chips"><button class="chip" data-act="uf" data-v="all" aria-pressed="${uf.about==="all"}">All</button><button class="chip" data-act="uf" data-v="__project" aria-pressed="${uf.about==="__project"}">Whole project</button>${tags.map(x=>`<button class="chip" data-act="uf" data-v="${esc(x)}" aria-pressed="${uf.about===x}">${esc(x)}</button>`).join("")}</div>

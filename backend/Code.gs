@@ -230,7 +230,7 @@ const ACTIONS = {
     return {task: taskOut_(t)};
   },
   postUpdate(b, user) {
-    const ctx = project_(user, b.projectId); needMgr_(ctx);
+    const ctx = project_(user, b.projectId);
     const text = clean_(b.text, 2000); if (!text) throw new Error('Write the update first');
     const u = insert_('Updates', {id: id_(), projectId: b.projectId, by: user.id, at: now_(), about: clean_(b.about, 80), text, pinned: false, seenBy: user.id});
     log_(b.projectId, user.id, 'posted an update: ' + text);
@@ -320,7 +320,7 @@ const ACTIONS = {
   },
   editUpdate(b, user) {
     const u = rows_('Updates').find(x => x.id === b.id); if (!u) throw new Error('Update not found');
-    const ctx = project_(user, u.projectId); needMgr_(ctx);
+    const ctx = project_(user, u.projectId); if (u.by !== user.id) needMgr_(ctx);
     const text = clean_(b.text, 2000); if (!text) throw new Error('The update cannot be empty');
     const old = u.text; u.text = text; u.about = clean_(b.about, 80); save_('Updates', u);
     log_(u.projectId, user.id, 'edited an update: “' + String(old).slice(0, 120) + '” → “' + text.slice(0, 200) + '”');
@@ -328,7 +328,7 @@ const ACTIONS = {
   },
   deleteUpdate(b, user) {
     const u = rows_('Updates').find(x => x.id === b.id); if (!u) throw new Error('Update not found');
-    const ctx = project_(user, u.projectId); needMgr_(ctx);
+    const ctx = project_(user, u.projectId); if (u.by !== user.id) needMgr_(ctx);
     remove_('Updates', u); log_(u.projectId, user.id, 'deleted an update: “' + String(u.text).slice(0, 200) + '”');
     return {};
   },
