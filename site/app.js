@@ -271,7 +271,8 @@ function renderTeam(){
     <div class="panel"><h2>Latest updates <button class="linkbtn" data-act="tab" data-t="updates" style="margin-left:auto">See all</button></h2>
       ${updates.map(u=>`<div class="upd">${av(u.by,1)}<div class="tx">${esc(u.text)}<div class="meta">${esc(nm(u.by))} · ${ago(u.at)}
         ${u.seenBy.includes(m.id)?`<span style="color:var(--teal);font-weight:600">✓ Seen</span>`:`<button class="btn sm go" data-act="seenupd" data-id="${u.id}">👍 Seen</button>`}</div></div></div>`).join("")||`<div class="hint">No updates yet.</div>`}<button class="btn sm" data-act="tab" data-t="updates" style="margin-top:10px">+ Tell the team something</button></div>
-  </aside></div>`;
+  </aside></div>
+  ${teamBoard()}`;
 }
 
 /* ---------- manager view ---------- */
@@ -320,13 +321,15 @@ function composerChips(){
    <div class="crow"><span class="lbl">About</span><input type="text" class="aboutin" id="dabout" list="aboutlist" placeholder="Anything: Tower 4, lobby ceiling, client comments…" value="${esc(draft.about)}" aria-label="What it's about">${auto("about")?`<span class="hint" style="color:var(--accent)">picked from text</span>`:""}</div>
    <div class="crow"><span class="lbl">For</span>${msSelect("dms")}</div>`;
 }
+function teamBoard(match){const t=S.tasks,now=Date.now();match=match||(()=>true);
+  const col=(st,title)=>{const list=t.filter(k=>k.status===st&&(st!=="done"||now-k.doneAt<7*DAY)).sort((a,b)=>st==="done"?b.doneAt-a.doneAt:(a.due||"9").localeCompare(b.due||"9"));
+    return `<div class="col"><h3>${title}<span class="hint">${list.length}</span></h3><div class="colbody">${list.map(k=>miniCard(k,match(k))).join("")||`<div class="hint" style="padding:8px">Nothing here</div>`}</div></div>`};
+  return `<section class="fullboard"><h2>Team board <span class="hint" style="font-weight:500">· who is on what right now</span></h2><div class="boardwrap"><div class="board">${col("new","Sent")}${col("doing","Doing")}${col("stuck","Stuck")}${col("done","Done this week")}</div></div></section>`}
 function renderMgr(){
   if(!draft)draft=newDraft();
   const m=me(),t=S.tasks,now=Date.now();
   const stuck=t.filter(k=>k.status==="stuck"),late=t.filter(isLate),unseen=t.filter(k=>!k.seenAt&&now-k.at>12*H),fin=t.filter(k=>k.status==="done"&&now-k.doneAt<2*DAY&&!k.kudos.includes(m.id));
   const match=k=>!S.filter||(S.filter==="stuck"&&k.status==="stuck")||(S.filter==="late"&&isLate(k))||(S.filter==="unseen"&&!k.seenAt&&now-k.at>12*H)||(S.filter==="fin"&&fin.includes(k));
-  const col=(st,title)=>{const list=t.filter(k=>k.status===st&&(st!=="done"||now-k.doneAt<7*DAY)).sort((a,b)=>st==="done"?b.doneAt-a.doneAt:(a.due||"9").localeCompare(b.due||"9"));
-    return `<div class="col"><h3>${title}<span class="hint">${list.length}</span></h3><div class="colbody">${list.map(k=>miniCard(k,match(k))).join("")||`<div class="hint" style="padding:8px">Nothing here</div>`}</div></div>`};
   const updates=S.updates.slice().sort((a,b)=>b.at-a.at).slice(0,3);
   return `
   <h1>Hi ${esc(m.name)}. ${stuck.length+late.length?`${stuck.length+late.length} things need you.`:"Team is moving."}</h1>
@@ -346,7 +349,6 @@ function renderMgr(){
       <button class="alert blue" data-act="filter" data-v="unseen" aria-pressed="${S.filter==="unseen"}"><b>${unseen.length}</b><span>Not opened in 12h</span></button>
       <button class="alert teal" data-act="filter" data-v="fin" aria-pressed="${S.filter==="fin"}"><b>${fin.length}</b><span>Just finished, say thanks</span></button>
     </div>
-    <div class="boardwrap"><div class="board">${col("new","Sent")}${col("doing","Doing")}${col("stuck","Stuck")}${col("done","Done this week")}</div></div>
   </div>
   <aside class="rail">
     <div class="panel"><h2>Next delivery</h2>${nextDelivery()}</div>
@@ -356,7 +358,8 @@ function renderMgr(){
         return `<div class="upd">${av(p.id)}<div class="tx"><b>${esc(p.name)}</b> <span class="hint">· ${mine.length} open</span><div class="meta">${cur?(cur.status==="stuck"?`<span class="note">Stuck: ${esc(cur.title)}</span>`:isLate(cur)?`<span class="note">Late: ${esc(cur.title)}</span>`:`Working on: ${esc(cur.title)}`):"Free for a new task"}</div></div></div>`}).join("")||`<div class="hint">No team members yet. ${inviteLink}</div>`}</div>
     <div class="panel"><h2>Latest updates <button class="linkbtn" data-act="tab" data-t="updates" style="margin-left:auto">See all</button></h2>
       ${updates.map(u=>{const o=u.seenBy.filter(id=>id!==u.by&&P(id));return `<div class="upd">${av(u.by,1)}<div class="tx">${esc(u.text)}<div class="meta">${esc(nm(u.by))} · ${ago(u.at)}<span class="seen">${o.map(id=>av(id,1)).join("")}</span><span>Seen by ${o.length} of ${Math.max(PEOPLE.length-1,0)}</span></div></div></div>`}).join("")||`<div class="hint">No updates yet.</div>`}</div>
-  </aside></div>`;
+  </aside></div>
+  ${teamBoard(match)}`;
 }
 /* ---------- editing ---------- */
 const isEd=(kind,id,j)=>EDIT&&EDIT.kind===kind&&EDIT.id===id&&(j===undefined||EDIT.j===j);
@@ -376,18 +379,18 @@ const editLink=(kind,id,extra)=>`<button class="linkbtn edl" data-act="edit" dat
 function miniCard(k,on){
   if(isEd("task",k.id))return `<div class="mini">${taskEditor(k)}</div>`;
   const m=me(),d=dueK(k);let a="";
-  if(k.status==="stuck")a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(k.stuckOn)}">Chase ${esc(k.stuckOn)}</button>`;
-  if(k.status==="new"&&!k.seenAt&&k.to!==ME.id)a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(nm(k.to))}">Nudge ${esc(nm(k.to))}</button>`;
+  if(k.status==="stuck"&&m.mgr)a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(k.stuckOn)}">Chase ${esc(k.stuckOn)}</button>`;
+  if(k.status==="new"&&!k.seenAt&&k.to!==ME.id&&m.mgr)a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(nm(k.to))}">Nudge ${esc(nm(k.to))}</button>`;
   if(k.to===ME.id&&k.status==="new")a=`<button class="btn sm go" data-act="got" data-id="${k.id}">Got it</button>`;
   if(k.to===ME.id&&(k.status==="doing"||k.status==="stuck"))a=`<button class="btn sm teal" data-act="done" data-id="${k.id}" data-w="now">Mark done</button>`;
-  if(k.status==="done"&&k.to!==ME.id)a=k.kudos.includes(m.id)?`<span class="kudo">👏 Sent</span>`:`<button class="btn sm go" data-act="kudos" data-id="${k.id}">👏 Kudos</button><button class="btn sm quiet" data-act="reopen" data-id="${k.id}">Reopen</button>`;
+  if(k.status==="done"&&k.to!==ME.id&&m.mgr)a=k.kudos.includes(m.id)?`<span class="kudo">👏 Sent</span>`:`<button class="btn sm go" data-act="kudos" data-id="${k.id}">👏 Kudos</button><button class="btn sm quiet" data-act="reopen" data-id="${k.id}">Reopen</button>`;
   return `<div class="mini ${on?"":"dim"}">
     <div class="row">${av(k.to,1)}<b style="color:var(--ink)">${esc(nm(k.to))}</b><span style="margin-left:auto">${aboutTag(k.about)}</span></div>
     <div class="t">${esc(k.title)}</div>
     <div class="row">${k.status==="done"?`<span class="donewhen">Done ${ago(k.doneAt)}</span>`:`<span class="tag due ${d.c}">${d.t}</span>`}
       ${k.status==="stuck"?`<span class="note">on ${esc(k.stuckOn)}</span>`:""}</div>
     ${tline(k)}
-    <div class="acts">${a}<span class="spacer"></span>${editLink("task",k.id)}</div></div>`;
+    ${a||m.mgr?`<div class="acts">${a}<span class="spacer"></span>${m.mgr?editLink("task",k.id):""}</div>`:""}</div>`;
 }
 
 /* ---------- schedule ---------- */
