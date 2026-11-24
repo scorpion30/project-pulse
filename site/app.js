@@ -807,8 +807,9 @@ document.addEventListener("click",async e=>{
       x.items.push(...its);try{await saveMs(x,`added ${its.length===1?"“"+its[0].t+"”":its.length+" items"} to ${x.name}`);toast(`${its.length} added. Now pick who does each one`)}catch(err){return}break}
     case"sendpicks":{const x=MS(b.dataset.ms),sel=x.items.map((it,j)=>({it,j,to:PICK[x.id+"|"+j]})).filter(o=>o.to&&!o.it.ok);if(!sel.length)return;b.disabled=true;
       const list=sel.map(o=>{const due=(document.getElementById(`pd-${x.id}-${o.j}`)||{}).value||defDue(x);return{title:o.it.t,to:o.to,due,about:o.it.g||"",ms:x.id,deliv:true,logTxt:`gave “${o.it.t}” (${x.name}) to ${nm(o.to)}, due ${longDate(due)}`}});
-      try{await giveTasks(list);sel.map(o=>o.j).sort((p,q)=>q-p).forEach(j=>x.items.splice(j,1));Object.keys(PICK).forEach(k=>{if(k.startsWith(x.id+"|"))delete PICK[k]});await saveMs(x);
-        const names=[...new Set(list.map(t=>nm(t.to)))];toast(`${list.length} task${list.length>1?"s":""} sent to ${names.join(", ")}`)}catch(err){b.disabled=false;return}break}
+      const keep=x.items.slice();sel.map(o=>o.j).sort((p,q)=>q-p).forEach(j=>x.items.splice(j,1));Object.keys(PICK).forEach(k=>{if(k.startsWith(x.id+"|"))delete PICK[k]});
+      try{await giveTasks(list);await saveMs(x);render();
+        const names=[...new Set(list.map(t=>nm(t.to)))];toast(`${list.length} task${list.length>1?"s":""} sent to ${names.join(", ")}`)}catch(err){if(!S.tasks.some(t=>t.ms===x.id&&list.some(l=>l.title===t.title&&l.to===t.to)))x.items=keep;render();return}break}
     case"assignopen":{const j=+b.dataset.j,same=S.open&&S.open.kind==="assign"&&S.open.ms===b.dataset.ms&&S.open.j===j;S.open=same?null:{kind:"assign",ms:b.dataset.ms,j};break}
     case"assignitem":{const x=MS(b.dataset.ms),j=+b.dataset.j,to=document.getElementById(`as-${x.id}-${j}`).value,due=document.getElementById(`ad-${x.id}-${j}`).value;
       if(!to){toast("Pick a person");return}const it=x.items[j];S.open=null;
