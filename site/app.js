@@ -75,8 +75,8 @@ function logLocal(txt){S.log.push({at:Date.now(),who:ME.id,txt})}
 
 /* ---------- milestones & warnings ---------- */
 function msInfo(m){
-  const ts=S.tasks.filter(k=>k.ms===m.id),done=ts.filter(k=>k.status==="done").length,ready=m.items.filter(i=>i.ok).length;
-  const total=ts.length+m.items.length,got=done+ready,pct=total?Math.round(got/total*100):0;
+  const ts=S.tasks.filter(k=>k.ms===m.id),done=ts.filter(k=>k.status==="done").length,its=freeItems(m,ts),ready=its.filter(i=>i.ok).length;
+  const total=ts.length+its.length,got=done+ready,pct=total?Math.round(got/total*100):0;
   const late=ts.filter(isLate).length,stuck=ts.filter(k=>k.status==="stuck").length,left=daysTo(m.date);
   const risk=left<0?"":(late||stuck)&&left<=7?"red":(left<=7&&pct<70)?"amber":"";
   return{ts,done,ready,total,got,pct,late,stuck,left,risk};
@@ -396,12 +396,14 @@ function personSelect(id,optional){return `<select id="${id}" aria-label="Who do
 
 /* ---------- delivery checklist ---------- */
 const PICK={};
+const freeItems=(m,ts)=>m.items.filter(i=>!(i.k&&ts.some(k=>k.id===i.k)));
 const defDue=x=>dstr(Math.min(Date.now()+3*DAY,new Date(x.date+"T12:00").getTime()));
 function parseItems(text,g0){let g=(g0||"").trim();const out=[];
   text.split("\n").map(s=>s.trim()).filter(Boolean).forEach(l=>{if(/:$/.test(l)){g=l.slice(0,-1).trim();return}const mm=l.match(/^[-•*]\s*(.*)$/);const t=(mm?mm[1]:l).trim();if(t)out.push({t:t.slice(0,200),ok:false,g:g.slice(0,60)})});return out}
 function delivGroups(x,i){const ts=i.ts.filter(k=>k.deliv),order=[];const add=g=>{if(!order.includes(g))order.push(g)};
-  x.items.forEach(it=>add(it.g||""));ts.forEach(k=>add(k.about||""));order.sort((a,b)=>a===""?-1:b===""?1:0);
-  return order.map(g=>({g,ts:ts.filter(k=>(k.about||"")===g),items:x.items.map((it,j)=>({it,j})).filter(o=>(o.it.g||"")===g)}))}
+  const rows=x.items.map((it,j)=>{const k=it.k&&ts.find(t=>t.id===it.k);return k?{k,g:it.g||""}:{it,j,g:it.g||""}});
+  ts.filter(k=>!x.items.some(it=>it.k===k.id)).forEach(k=>rows.push({k,g:k.about||""}));rows.forEach(r=>add(r.g));order.sort((a,b)=>a===""?-1:b===""?1:0);
+  return order.map(g=>({g,rows:rows.filter(r=>r.g===g)}))}
 function pickCount(msId){return Object.keys(PICK).filter(k=>k.startsWith(msId+"|")&&PICK[k]).length}
 function delivBlock(x,i,m){
   const gs=delivGroups(x,i),ts=i.ts.filter(k=>k.deliv);
@@ -414,11 +416,11 @@ function delivBlock(x,i,m){
     return `<div class="ditem irow"><label class="${it.ok?"ok":""}" title="Tick when it's ready without giving it to anyone"><input type="checkbox" data-act="tick" data-ms="${x.id}" data-j="${j}" ${it.ok?"checked":""} ${m.mgr?"":"disabled"}><span>${esc(it.t)}</span></label>
       ${it.ok?"":m.mgr?`<select class="pickp" data-pick="${key}" aria-label="Who does ${esc(it.t)}"><option value="">No one yet</option>${assignees().map(p=>`<option value="${p.id}" ${p.id===pk?"selected":""}>${esc(p.id===ME.id?"Me":p.name)}</option>`).join("")}</select><input type="date" class="pickd" id="pd-${x.id}-${j}" aria-label="Due date" max="${x.date}" value="${defDue(x)}">`:`<span class="hint">No one yet</span>`}
       ${m.mgr?editLink("item",x.id,`data-j="${j}"`):""}</div>`};
-  const body=gs.map(G=>{const tot=G.ts.length+G.items.length,dn=G.ts.filter(k=>k.status==="done").length+G.items.filter(o=>o.it.ok).length;
-    return `${G.g?`<div class="dgroup">${esc(G.g)}<span class="hint">${dn}/${tot}</span></div>`:""}${G.ts.map(taskRow).join("")}${G.items.map(itemRow).join("")}`}).join("");
+  const body=gs.map(G=>{const tot=G.rows.length,dn=G.rows.filter(r=>r.k?r.k.status==="done":r.it.ok).length;
+    return `${G.g?`<div class="dgroup">${esc(G.g)}<span class="hint">${dn}/${tot}</span></div>`:""}${G.rows.map(r=>r.k?taskRow(r.k):itemRow(r)).join("")}`}).join("");
   const n=pickCount(x.id),groups=[...new Set(gs.map(G=>G.g).filter(Boolean))];
   return `<div><h4>What we deliver</h4>${who}<div class="dl">${body||`<span class="hint">Nothing listed yet.${m.mgr?" Add the drawings and documents below.":""}</span>`}</div>
-    ${m.mgr&&x.items.some(it=>!it.ok)?`<div class="sendbar"><button class="btn go" id="sendpicks-${x.id}" data-act="sendpicks" data-ms="${x.id}" ${n?"":"disabled"}>${n?`Send ${n} task${n>1?"s":""}`:"Pick people, then send"}</button><span class="hint">Each person gets their items in their tasks, linked to ${esc(x.name)}.</span></div>`:""}
+    ${m.mgr&&freeItems(x,i.ts).some(it=>!it.ok)?`<div class="sendbar"><button class="btn go" id="sendpicks-${x.id}" data-act="sendpicks" data-ms="${x.id}" ${n?"":"disabled"}>${n?`Send ${n} task${n>1?"s":""}`:"Pick people, then send"}</button><span class="hint">Each person gets their items in their tasks, linked to ${esc(x.name)}.</span></div>`:""}
     ${m.mgr?`<div class="additem"><div class="crow"><input type="text" id="ng-${x.id}" list="grp-${x.id}" placeholder="Group (optional), e.g. Plans" aria-label="Group"><datalist id="grp-${x.id}">${groups.map(g=>`<option value="${esc(g)}">`).join("")}</datalist></div>
       <textarea id="ni-${x.id}" rows="3" placeholder="One item per line, e.g.&#10;Ground floor plan&#10;Typical floor plan&#10;Elevations:   ← a line ending with : starts a new group&#10;North elevation" aria-label="New items"></textarea>
       <div class="crow"><button class="btn sm go" data-act="additems" data-ms="${x.id}">Add to list</button><span class="hint">Then pick who does each one.</span></div></div>`:`<div class="hint" style="margin-top:4px">Everyone sees who has each item.</div>`}</div>`;
@@ -523,7 +525,7 @@ function repModel(){
   const tasks=d.tasks.filter(k=>R.who==="all"||k.to===R.who);
   const given=tasks.filter(k=>inR(k.at)),fin=tasks.filter(k=>k.status==="done"&&inR(k.doneAt)),ontime=fin.filter(k=>!k.due||onTimeK(k));
   const lateNow=tasks.filter(isLate),stuckNow=tasks.filter(k=>k.status==="stuck");
-  const ms=d.milestones.map(m=>{const ts=d.tasks.filter(k=>k.ms===m.id),done=ts.filter(k=>k.status==="done").length,ready=m.items.filter(i=>i.ok).length,total=ts.length+m.items.length,pct=total?Math.round((done+ready)/total*100):0,left=daysTo(m.date);
+  const ms=d.milestones.map(m=>{const ts=d.tasks.filter(k=>k.ms===m.id),done=ts.filter(k=>k.status==="done").length,its=freeItems(m,ts),ready=its.filter(i=>i.ok).length,total=ts.length+its.length,pct=total?Math.round((done+ready)/total*100):0,left=daysTo(m.date);
     return{name:m.name,project:pn(m.projectId),date:m.date,pct,state:pct===100&&total?"Delivered":left<0?"Overdue":(left<=7&&pct<70)?"At risk":"On track"}}).sort((a,b)=>a.date.localeCompare(b.date));
   const title=R.scope==="project"?(pn(S.cur)||(PROJECTS.find(p=>p.id===S.cur)||{}).name||"Project"):"All projects";
   return{title,range:`${longDate(R.from)} – ${longDate(R.to)}`,person:n||"",log,given,fin,ontime,lateNow,stuckNow,ms,updates:d.updates.length,pn,multi:R.scope!=="project",
@@ -805,11 +807,11 @@ document.addEventListener("click",async e=>{
       x.items.push({t:v,ok:false});saveMs(x,`added “${v}” to ${x.name}`).catch(()=>{});break}
     case"additems":{const x=MS(b.dataset.ms),its=parseItems(document.getElementById("ni-"+x.id).value,document.getElementById("ng-"+x.id).value);if(!its.length){toast("Type at least one item");return}
       x.items.push(...its);try{await saveMs(x,`added ${its.length===1?"“"+its[0].t+"”":its.length+" items"} to ${x.name}`);toast(`${its.length} added. Now pick who does each one`)}catch(err){return}break}
-    case"sendpicks":{const x=MS(b.dataset.ms),sel=x.items.map((it,j)=>({it,j,to:PICK[x.id+"|"+j]})).filter(o=>o.to&&!o.it.ok);if(!sel.length)return;b.disabled=true;
+    case"sendpicks":{const x=MS(b.dataset.ms),live=it=>it.k&&S.tasks.some(t=>t.id===it.k),sel=x.items.map((it,j)=>({it,j,to:PICK[x.id+"|"+j]})).filter(o=>o.to&&!o.it.ok&&!live(o.it));if(!sel.length)return;b.disabled=true;
       const list=sel.map(o=>{const due=(document.getElementById(`pd-${x.id}-${o.j}`)||{}).value||defDue(x);return{title:o.it.t,to:o.to,due,about:o.it.g||"",ms:x.id,deliv:true,logTxt:`gave “${o.it.t}” (${x.name}) to ${nm(o.to)}, due ${longDate(due)}`}});
-      const keep=x.items.slice();sel.map(o=>o.j).sort((p,q)=>q-p).forEach(j=>x.items.splice(j,1));Object.keys(PICK).forEach(k=>{if(k.startsWith(x.id+"|"))delete PICK[k]});
-      try{await giveTasks(list);await saveMs(x);render();
-        const names=[...new Set(list.map(t=>nm(t.to)))];toast(`${list.length} task${list.length>1?"s":""} sent to ${names.join(", ")}`)}catch(err){if(!S.tasks.some(t=>t.ms===x.id&&list.some(l=>l.title===t.title&&l.to===t.to)))x.items=keep;render();return}break}
+      Object.keys(PICK).forEach(k=>{if(k.startsWith(x.id+"|"))delete PICK[k]});
+      try{const j=await send("createTasks",{projectId:S.cur,tasks:list});j.tasks.forEach((t,n)=>{sel[n].it.k=t.id});S.tasks.push(...j.tasks);render();await saveMs(x);
+        const names=[...new Set(list.map(t=>nm(t.to)))];toast(`${list.length} task${list.length>1?"s":""} sent to ${names.join(", ")}`)}catch(err){render();return}break}
     case"assignopen":{const j=+b.dataset.j,same=S.open&&S.open.kind==="assign"&&S.open.ms===b.dataset.ms&&S.open.j===j;S.open=same?null:{kind:"assign",ms:b.dataset.ms,j};break}
     case"assignitem":{const x=MS(b.dataset.ms),j=+b.dataset.j,to=document.getElementById(`as-${x.id}-${j}`).value,due=document.getElementById(`ad-${x.id}-${j}`).value;
       if(!to){toast("Pick a person");return}const it=x.items[j];S.open=null;

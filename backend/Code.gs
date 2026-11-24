@@ -246,7 +246,7 @@ const ACTIONS = {
   },
   saveMilestone(b, user) {
     const ctx = project_(user, b.projectId); needMgr_(ctx);
-    const items = JSON.stringify((b.items || []).slice(0, 200).map(i => ({t: clean_(i.t, 200), ok: !!i.ok, g: clean_(i.g, 60)})));
+    const items = JSON.stringify((b.items || []).slice(0, 200).map(i => ({t: clean_(i.t, 200), ok: !!i.ok, g: clean_(i.g, 60), k: clean_(i.k, 20)})));
     let m = b.id ? rows_('Milestones').find(x => x.id === b.id && x.projectId === b.projectId) : null;
     if (m) { m.items = items; if (b.name) m.name = clean_(b.name, 100); if (b.date) m.date = clean_(b.date, 10); save_('Milestones', m); }
     else { m = insert_('Milestones', {id: id_(), projectId: b.projectId, name: clean_(b.name, 100), date: clean_(b.date, 10), items}); }
