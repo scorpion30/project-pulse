@@ -393,6 +393,36 @@ function miniCard(k,on){
 /* ---------- schedule ---------- */
 let msForm={name:"",date:"",items:""};
 function personSelect(id,optional){return `<select id="${id}" aria-label="Who does it"><option value="">${optional?"No one yet":"Pick person"}</option>${team().map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>`}
+
+/* ---------- delivery checklist ---------- */
+const PICK={};
+const defDue=x=>dstr(Math.min(Date.now()+3*DAY,new Date(x.date+"T12:00").getTime()));
+function parseItems(text,g0){let g=(g0||"").trim();const out=[];
+  text.split("\n").map(s=>s.trim()).filter(Boolean).forEach(l=>{if(/:$/.test(l)){g=l.slice(0,-1).trim();return}const mm=l.match(/^[-•*]\s*(.*)$/);const t=(mm?mm[1]:l).trim();if(t)out.push({t:t.slice(0,200),ok:false,g:g.slice(0,60)})});return out}
+function delivGroups(x,i){const ts=i.ts.filter(k=>k.deliv),order=[];const add=g=>{if(!order.includes(g))order.push(g)};
+  x.items.forEach(it=>add(it.g||""));ts.forEach(k=>add(k.about||""));order.sort((a,b)=>a===""?-1:b===""?1:0);
+  return order.map(g=>({g,ts:ts.filter(k=>(k.about||"")===g),items:x.items.map((it,j)=>({it,j})).filter(o=>(o.it.g||"")===g)}))}
+function pickCount(msId){return Object.keys(PICK).filter(k=>k.startsWith(msId+"|")&&PICK[k]).length}
+function delivBlock(x,i,m){
+  const gs=delivGroups(x,i),ts=i.ts.filter(k=>k.deliv);
+  const by={};ts.forEach(k=>{(by[k.to]=by[k.to]||{n:0,d:0}).n++;if(k.status==="done")by[k.to].d++});
+  const who=Object.keys(by).length?`<div class="whohas"><span class="lbl">Who has what</span>${Object.entries(by).map(([id,v])=>`<span class="whochip">${av(id,1)}${esc(nm(id))} <b>${v.d}/${v.n}</b></span>`).join("")}</div>`:"";
+  const taskRow=k=>isEd("task",k.id)?taskEditor(k):`<div class="ditem">${av(k.to,1)}<span class="x ${k.status==="done"?"dn":""}">${esc(k.title)}</span><span class="hint">${esc(nm(k.to))} · ${k.status==="done"?"done "+ago(k.doneAt):dueK(k).t.replace("Due ","")}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}${m.mgr?editLink("task",k.id):""}</div>`;
+  const itemRow=({it,j})=>{
+    if(isEd("item",x.id,j))return `<div class="crow assignrow"><input id="ei-text" value="${esc(it.t)}" aria-label="Item name"><button class="btn sm go" data-act="saveitem" data-ms="${x.id}" data-j="${j}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button>${delBtn("delitem","i"+x.id+j,`data-ms="${x.id}" data-j="${j}"`,"Remove")}</div>`;
+    const key=x.id+"|"+j,pk=PICK[key]||"";
+    return `<div class="ditem irow"><label class="${it.ok?"ok":""}" title="Tick when it's ready without giving it to anyone"><input type="checkbox" data-act="tick" data-ms="${x.id}" data-j="${j}" ${it.ok?"checked":""} ${m.mgr?"":"disabled"}><span>${esc(it.t)}</span></label>
+      ${it.ok?"":m.mgr?`<select class="pickp" data-pick="${key}" aria-label="Who does ${esc(it.t)}"><option value="">No one yet</option>${assignees().map(p=>`<option value="${p.id}" ${p.id===pk?"selected":""}>${esc(p.id===ME.id?"Me":p.name)}</option>`).join("")}</select><input type="date" class="pickd" id="pd-${x.id}-${j}" aria-label="Due date" max="${x.date}" value="${defDue(x)}">`:`<span class="hint">No one yet</span>`}
+      ${m.mgr?editLink("item",x.id,`data-j="${j}"`):""}</div>`};
+  const body=gs.map(G=>{const tot=G.ts.length+G.items.length,dn=G.ts.filter(k=>k.status==="done").length+G.items.filter(o=>o.it.ok).length;
+    return `${G.g?`<div class="dgroup">${esc(G.g)}<span class="hint">${dn}/${tot}</span></div>`:""}${G.ts.map(taskRow).join("")}${G.items.map(itemRow).join("")}`}).join("");
+  const n=pickCount(x.id),groups=[...new Set(gs.map(G=>G.g).filter(Boolean))];
+  return `<div><h4>What we deliver</h4>${who}<div class="dl">${body||`<span class="hint">Nothing listed yet.${m.mgr?" Add the drawings and documents below.":""}</span>`}</div>
+    ${m.mgr&&x.items.some(it=>!it.ok)?`<div class="sendbar"><button class="btn go" id="sendpicks-${x.id}" data-act="sendpicks" data-ms="${x.id}" ${n?"":"disabled"}>${n?`Send ${n} task${n>1?"s":""}`:"Pick people, then send"}</button><span class="hint">Each person gets their items in their tasks, linked to ${esc(x.name)}.</span></div>`:""}
+    ${m.mgr?`<div class="additem"><div class="crow"><input type="text" id="ng-${x.id}" list="grp-${x.id}" placeholder="Group (optional), e.g. Plans" aria-label="Group"><datalist id="grp-${x.id}">${groups.map(g=>`<option value="${esc(g)}">`).join("")}</datalist></div>
+      <textarea id="ni-${x.id}" rows="3" placeholder="One item per line, e.g.&#10;Ground floor plan&#10;Typical floor plan&#10;Elevations:   ← a line ending with : starts a new group&#10;North elevation" aria-label="New items"></textarea>
+      <div class="crow"><button class="btn sm go" data-act="additems" data-ms="${x.id}">Add to list</button><span class="hint">Then pick who does each one.</span></div></div>`:`<div class="hint" style="margin-top:4px">Everyone sees who has each item.</div>`}</div>`;
+}
 function renderSchedule(){
   const m=me(),list=S.ms.slice().sort((a,b)=>a.date.localeCompare(b.date));
   let track="";
@@ -411,16 +441,7 @@ function renderSchedule(){
       ${bar(i)}
       <div class="tags"><b>${i.pct}% ready</b><span class="hint">· ${i.got} of ${i.total} items · ${i.total-i.got} left</span>${i.late?`<span class="tag due late">${i.late} late</span>`:""}${i.stuck?`<span class="tag due late">${i.stuck} stuck</span>`:""}</div>
       <div class="mgrid">
-        <div><h4>What we deliver</h4><div class="dl">
-          ${i.ts.filter(k=>k.deliv).map(k=>isEd("task",k.id)?taskEditor(k):`<div class="ditem">${av(k.to,1)}<span class="x ${k.status==="done"?"dn":""}">${esc(k.title)}</span><span class="hint">${esc(nm(k.to))} · ${k.status==="done"?"done "+ago(k.doneAt):dueK(k).t.replace("Due ","")}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}${m.mgr?editLink("task",k.id):""}</div>`).join("")}
-          ${x.items.map((it,j)=>{if(isEd("item",x.id,j))return `<div class="crow assignrow"><input id="ei-text" value="${esc(it.t)}" aria-label="Item name"><button class="btn sm go" data-act="saveitem" data-ms="${x.id}" data-j="${j}">Save</button><button class="btn sm quiet" data-act="canceledit">Cancel</button>${delBtn("delitem","i"+x.id+j,`data-ms="${x.id}" data-j="${j}"`,"Remove")}</div>`;const op=S.open&&S.open.kind==="assign"&&S.open.ms===x.id&&S.open.j===j;
-            return `<div class="ditem"><label class="${it.ok?"ok":""}"><input type="checkbox" data-act="tick" data-ms="${x.id}" data-j="${j}" ${it.ok?"checked":""} ${m.mgr?"":"disabled"}><span>${esc(it.t)}</span></label>
-            ${m.mgr&&!it.ok?`<button class="linkbtn" data-act="assignopen" data-ms="${x.id}" data-j="${j}">${op?"Cancel":"Give to someone"}</button>`:""}${m.mgr?editLink("item",x.id,`data-j="${j}"`):""}</div>
-            ${op?`<div class="crow assignrow">${personSelect("as-"+x.id+"-"+j)}<input type="date" id="ad-${x.id}-${j}" aria-label="Due date" max="${x.date}" value="${dstr(Math.min(Date.now()+3*DAY,new Date(x.date+"T12:00").getTime()))}"><button class="btn sm go" data-act="assignitem" data-ms="${x.id}" data-j="${j}">Send</button></div>`:""}`}).join("")}
-          ${!x.items.length&&!i.ts.some(k=>k.deliv)?`<span class="hint">No items listed.</span>`:""}</div>
-          ${m.mgr?`<div class="additem"><input type="text" id="ni-${x.id}" placeholder="Add an item, e.g. Sections A–D" aria-label="New item">
-            <div class="crow">${personSelect("np-"+x.id,true)}<input type="date" id="nd-${x.id}" aria-label="Due date" max="${x.date}"><button class="btn sm go" data-act="additem" data-ms="${x.id}">Add</button></div>
-            <span class="hint">Pick a person to send it as a task, or leave “No one yet” and tick it yourself.</span></div>`:`<div class="hint" style="margin-top:4px">Items with a name are tasks; managers tick the rest.</div>`}</div>
+        ${delivBlock(x,i,m)}
         <div><h4>Other tasks for this delivery</h4><div class="tl">${i.ts.filter(k=>!k.deliv).map(k=>isEd("task",k.id)?taskEditor(k):`<div>${av(k.to,1)}<span class="x">${esc(k.title)}</span>${isLate(k)?`<span class="tag due late">Late</span>`:`<span class="st ${k.status}">${{new:"New",doing:"Doing",stuck:"Stuck",done:"Done"}[k.status]}</span>`}${m.mgr?editLink("task",k.id):""}</div>`).join("")||`<span class="hint">No tasks linked yet. Pick this delivery when you give out a task.</span>`}</div></div>
       </div></article>`};
   return `<h1>Schedule &amp; deliveries</h1>
@@ -431,7 +452,7 @@ function renderSchedule(){
     ${m.mgr?`<div class="panel"><h2>Add a delivery</h2><div class="form">
       <label>Name<input type="text" id="msname" placeholder="e.g. Tender package" value="${esc(msForm.name)}"></label>
       <label>Date<input type="date" id="msdate" value="${msForm.date}"></label>
-      <label>What gets delivered (one per line)<textarea id="msitems" placeholder="GA plans&#10;Sections&#10;Area schedule">${esc(msForm.items)}</textarea></label>
+      <label>What gets delivered (one per line; a line ending with : starts a group)<textarea id="msitems" rows="6" placeholder="Plans:&#10;Ground floor plan&#10;Typical floor plan&#10;Elevations:&#10;North + South&#10;Reports:&#10;Area statement">${esc(msForm.items)}</textarea></label>
       <button class="btn go" data-act="addms">Add delivery</button></div></div>`:""}
     <div class="panel"><h2>How the bar works</h2><div class="stack" style="gap:8px;font-size:14px">
       <div><b>Ready %</b> counts finished tasks for this delivery plus the items managers ticked as ready.</div>
@@ -782,12 +803,18 @@ document.addEventListener("click",async e=>{
       const to=document.getElementById("np-"+x.id).value,due=document.getElementById("nd-"+x.id).value||dstr(Math.min(Date.now()+3*DAY,new Date(x.date+"T12:00").getTime()));
       if(to){try{await giveTasks([{title:v,to,due,about:"",ms:x.id,deliv:true,logTxt:`gave “${v}” (${x.name}) to ${nm(to)}, due ${longDate(due)}`}]);toast(`${v} sent to ${nm(to)} as a task`)}catch(err){}return}
       x.items.push({t:v,ok:false});saveMs(x,`added “${v}” to ${x.name}`).catch(()=>{});break}
+    case"additems":{const x=MS(b.dataset.ms),its=parseItems(document.getElementById("ni-"+x.id).value,document.getElementById("ng-"+x.id).value);if(!its.length){toast("Type at least one item");return}
+      x.items.push(...its);try{await saveMs(x,`added ${its.length===1?"“"+its[0].t+"”":its.length+" items"} to ${x.name}`);toast(`${its.length} added. Now pick who does each one`)}catch(err){return}break}
+    case"sendpicks":{const x=MS(b.dataset.ms),sel=x.items.map((it,j)=>({it,j,to:PICK[x.id+"|"+j]})).filter(o=>o.to&&!o.it.ok);if(!sel.length)return;b.disabled=true;
+      const list=sel.map(o=>{const due=(document.getElementById(`pd-${x.id}-${o.j}`)||{}).value||defDue(x);return{title:o.it.t,to:o.to,due,about:o.it.g||"",ms:x.id,deliv:true,logTxt:`gave “${o.it.t}” (${x.name}) to ${nm(o.to)}, due ${longDate(due)}`}});
+      try{await giveTasks(list);sel.map(o=>o.j).sort((p,q)=>q-p).forEach(j=>x.items.splice(j,1));Object.keys(PICK).forEach(k=>{if(k.startsWith(x.id+"|"))delete PICK[k]});await saveMs(x);
+        const names=[...new Set(list.map(t=>nm(t.to)))];toast(`${list.length} task${list.length>1?"s":""} sent to ${names.join(", ")}`)}catch(err){b.disabled=false;return}break}
     case"assignopen":{const j=+b.dataset.j,same=S.open&&S.open.kind==="assign"&&S.open.ms===b.dataset.ms&&S.open.j===j;S.open=same?null:{kind:"assign",ms:b.dataset.ms,j};break}
     case"assignitem":{const x=MS(b.dataset.ms),j=+b.dataset.j,to=document.getElementById(`as-${x.id}-${j}`).value,due=document.getElementById(`ad-${x.id}-${j}`).value;
       if(!to){toast("Pick a person");return}const it=x.items[j];S.open=null;
       try{await giveTasks([{title:it.t,to,due,about:"",ms:x.id,deliv:true,logTxt:`gave “${it.t}” (${x.name}) to ${nm(to)}, due ${longDate(due)}`}]);x.items.splice(j,1);await saveMs(x);toast(`${it.t} sent to ${nm(to)}`)}catch(err){}break}
     case"addms":{const n=msForm.name.trim(),d=msForm.date;if(!n||!d){toast("Add a name and a date");return}
-      try{const j=await send("saveMilestone",{projectId:S.cur,name:n,date:d,items:msForm.items.split("\n").map(s=>s.trim()).filter(Boolean).map(t=>({t,ok:false})),logTxt:`planned ${n} for ${longDate(d)}`},`${n} added to the schedule`);
+      try{const j=await send("saveMilestone",{projectId:S.cur,name:n,date:d,items:parseItems(msForm.items),logTxt:`planned ${n} for ${longDate(d)}`},`${n} added to the schedule`);
         S.ms.push(j.milestone);msForm={name:"",date:"",items:""}}catch(err){return}break}
     case"npcreate":{const n=document.getElementById("npname").value.trim();if(!n){toast("Give the project a name");return}
       try{const j=await send("createProject",{teamId:TEAM.id,name:n,msName:document.getElementById("npms").value.trim(),msDate:document.getElementById("npdate").value},`${n} created`);
@@ -813,6 +840,7 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",e=>{
   const id=e.target.id;
   if(e.target.dataset&&e.target.dataset.line!==undefined){draft.lineTo[+e.target.dataset.line]=e.target.value;reChips();return}
+  if(e.target.dataset&&e.target.dataset.pick){PICK[e.target.dataset.pick]=e.target.value;const ms=e.target.dataset.pick.split("|")[0],n=pickCount(ms),bt=document.getElementById("sendpicks-"+ms);if(bt){bt.disabled=!n;bt.textContent=n?`Send ${n} task${n>1?"s":""}`:"Pick people, then send"}return}
   if(id==="dms"){draft.ms=e.target.value;return}
   if(id==="dduedate"){if(e.target.value){draft.due=e.target.value;draft.man.due=true;draft.finH=null;reChips()}return}
   if(id==="dduetime"){draft.time=e.target.value;if(draft.time){draft.finH=null;if(!draft.due){draft.due=dstr(Date.now());draft.man.due=true}}reChips();return}
@@ -829,7 +857,7 @@ document.addEventListener("keydown",e=>{
   const id=e.target.id;
   if(id==="ctext"&&e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();document.getElementById("postbtn").click()}
   if(id==="utext"&&e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();document.querySelector('[data-act="upost"]').click()}
-  if(id&&id.startsWith("ni-")&&e.key==="Enter"){e.preventDefault();document.querySelector(`[data-act="additem"][data-ms="${id.slice(3)}"]`).click()}
+  if(id&&id.startsWith("ni-")&&e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();document.querySelector(`[data-act="additems"][data-ms="${id.slice(3)}"]`).click()}
 });
 /* refresh every minute while nobody is typing */
 setInterval(()=>{const a=document.activeElement;if(TOKEN&&TEAM&&!document.hidden&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&saving===0&&!S.open&&!EDIT&&S.tab!=="history")reload()},60000);

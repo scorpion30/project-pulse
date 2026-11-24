@@ -335,3 +335,16 @@ input[type=text],input[type=date],select,textarea{font:inherit;border:1px solid 
 #dduetime{font:inherit;font-size:14px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .mini .tag.due{white-space:normal;max-width:100%;line-height:1.35}
 .colbody{display:flex;flex-direction:column;gap:8px;max-height:540px;overflow-y:auto;padding-right:2px;scrollbar-width:thin}
+
+/* delivery checklist */
+.dgroup{font:800 13px var(--f-display);text-transform:uppercase;letter-spacing:.04em;color:var(--ink);margin:10px 0 2px;padding-bottom:3px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.dl .dgroup:first-child{margin-top:0}
+.irow select.pickp,.irow input.pickd{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:auto}
+.irow input.pickd{width:132px;height:auto}
+.whohas{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
+.whohas .lbl{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.whochip{display:inline-flex;gap:5px;align-items:center;background:var(--soft);border-radius:99px;padding:2px 9px 2px 3px;font-size:12px}
+.whochip b{color:var(--teal)}
+.sendbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.additem textarea{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);resize:vertical;width:100%;box-sizing:border-box}
+.additem .crow input[type=text]{flex:1}
