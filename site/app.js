@@ -336,10 +336,28 @@ function composerChips(){
    <div class="crow"><span class="lbl">About</span><input type="text" class="aboutin" id="dabout" list="aboutlist" placeholder="Anything: Tower 4, lobby ceiling, client comments…" value="${esc(draft.about)}" aria-label="What it's about">${auto("about")?`<span class="hint" style="color:var(--accent)">picked from text</span>`:""}</div>
    <div class="crow"><span class="lbl">For</span>${msSelect("dms")}</div>`;
 }
-function teamBoard(match){const t=S.tasks,now=Date.now();match=match||(()=>true);
-  const col=(st,title)=>{const list=t.filter(k=>k.status===st&&(st!=="done"||now-k.doneAt<7*DAY)).sort((a,b)=>st==="done"?b.doneAt-a.doneAt:(a.due||"9").localeCompare(b.due||"9"));
-    return `<div class="col"><h3>${title}<span class="hint">${list.length}</span></h3><div class="colbody">${list.map(k=>miniCard(k,match(k))).join("")||`<div class="hint" style="padding:8px">Nothing here</div>`}</div></div>`};
-  return `<section class="fullboard"><h2>Team board <span class="hint" style="font-weight:500">· who is on what right now</span></h2><div class="boardwrap"><div class="board">${col("new","Sent")}${col("doing","Doing")}${col("stuck","Stuck")}${col("done","Done this week")}</div></div></section>`}
+let BF={who:"all",st:"all"};
+const bfWho=k=>BF.who==="all"||k.to===(BF.who==="me"?ME.id:BF.who);
+function teamBoard(match){
+  const now=Date.now();match=match||(()=>true);
+  if(BF.who!=="all"&&BF.who!=="me"&&!P(BF.who))BF.who="all";
+  const t=S.tasks.filter(bfWho);
+  const order=(st,l)=>l.sort((a,b)=>st==="done"?b.doneAt-a.doneAt:(a.due||"9").localeCompare(b.due||"9"));
+  const pick={new:k=>k.status==="new",doing:k=>k.status==="doing",stuck:k=>k.status==="stuck",done:k=>k.status==="done",late:isLate};
+  const empty=`<div class="hint" style="padding:8px">Nothing here</div>`;
+  const col=(st,title)=>{const list=order(st,t.filter(k=>pick[st](k)&&(st!=="done"||now-k.doneAt<7*DAY)));
+    return `<div class="col"><h3>${title}<span class="hint">${list.length}</span></h3><div class="colbody">${list.map(k=>miniCard(k,match(k))).join("")||empty}</div></div>`};
+  const chip=(st,l)=>`<button class="chip" data-act="bfst" data-v="${st}" aria-pressed="${BF.st===st}">${l} <span class="cn">${st==="all"?t.length:t.filter(pick[st]).length}</span></button>`;
+  const others=PEOPLE.filter(p=>p.id!==ME.id),other=BF.who!=="all"&&BF.who!=="me";
+  const bar=`<div class="bfilter"><div class="chips">
+      <button class="chip" data-act="bfwho" data-v="all" aria-pressed="${BF.who==="all"}">Everyone</button>
+      <button class="chip" data-act="bfwho" data-v="me" aria-pressed="${BF.who==="me"}">My tasks</button>
+      <select id="bfwho" class="${other?"on":""}" aria-label="Show one person's tasks"><option value="">Choose a person…</option>${others.map(p=>`<option value="${esc(p.id)}" ${BF.who===p.id?"selected":""}>${esc(p.name)} (${S.tasks.filter(k=>k.to===p.id&&k.status!=="done").length} open)</option>`).join("")}</select></div>
+    <div class="chips">${chip("all","All")}${chip("new","Sent")}${chip("doing","Doing")}${chip("stuck","Stuck")}${chip("done","Done")}${chip("late","Late")}${BF.who!=="all"||BF.st!=="all"?`<button class="linkbtn" data-act="bfclear">Clear filter</button>`:""}</div></div>`;
+  const sub=BF.who==="all"?"who is on what right now":BF.who==="me"?"your tasks":nm(BF.who)+"'s tasks";
+  const body=BF.st==="all"?`<div class="boardwrap"><div class="board">${col("new","Sent")}${col("doing","Doing")}${col("stuck","Stuck")}${col("done","Done this week")}</div></div>`
+    :`<div class="col"><div class="colbody flat">${order(BF.st,t.filter(pick[BF.st])).map(k=>miniCard(k,true)).join("")||empty}</div></div>`;
+  return `<section class="fullboard"><h2>Team board <span class="hint" style="font-weight:500">· ${esc(sub)}</span></h2>${bar}${body}</section>`}
 function renderMgr(){
   if(!draft)draft=newDraft();
   const m=me(),t=S.tasks,now=Date.now();
@@ -791,7 +809,10 @@ document.addEventListener("click",async e=>{
     case"nudge":send("taskAction",{id:k.id,do:"nudge",logTxt:`nudged ${b.dataset.to} about “${k.title}”`},`Nudge saved. ${b.dataset.to} will see it in History`).catch(()=>{});return;
     case"seenupd":{const u=S.updates.find(x=>x.id===b.dataset.id);if(!u.seenBy.includes(m.id))u.seenBy.push(m.id);send("updateAction",{id:u.id,do:"seen"}).catch(()=>{});break}
     case"pin":{const u=S.updates.find(x=>x.id===b.dataset.id);u.pinned=!u.pinned;send("updateAction",{id:u.id,do:"pin"},u.pinned?"Pinned to the top":"Unpinned").catch(()=>{});break}
-    case"filter":S.filter=S.filter===b.dataset.v?null:b.dataset.v;break;
+    case"filter":S.filter=S.filter===b.dataset.v?null:b.dataset.v;BF={who:"all",st:"all"};break;
+    case"bfwho":BF.who=b.dataset.v;S.filter=null;break;
+    case"bfst":BF.st=b.dataset.v;S.filter=null;break;
+    case"bfclear":BF={who:"all",st:"all"};break;
     case"mode":draft.mode=b.dataset.v;draft.about="";break;
     case"dto":draft.to=b.dataset.id;draft.man.to=true;reChips();return;
     case"ddue":draft.due=b.dataset.v;draft.man.due=true;draft.finH=null;reChips();return;
@@ -864,12 +885,13 @@ document.addEventListener("change",e=>{
   const id=e.target.id;
   if(e.target.dataset&&e.target.dataset.line!==undefined){draft.lineTo[+e.target.dataset.line]=e.target.value;reChips();return}
   if(e.target.dataset&&e.target.dataset.pick){PICK[e.target.dataset.pick]=e.target.value;const ms=e.target.dataset.pick.split("|")[0],n=pickCount(ms),bt=document.getElementById("sendpicks-"+ms);if(bt){bt.disabled=!n;bt.textContent=n?`Send ${n} task${n>1?"s":""}`:"Pick people, then send"}return}
+  if(id==="bfwho"){BF.who=e.target.value||"all";S.filter=null;render();return}
   if(id==="dms"){draft.ms=e.target.value;return}
   if(id==="dduedate"){if(e.target.value){draft.due=e.target.value;draft.man.due=true;draft.finH=null;reChips()}return}
   if(id==="dduetime"){draft.time=e.target.value;if(draft.time){draft.finH=null;if(!draft.due){draft.due=dstr(Date.now());draft.man.due=true}}reChips();return}
   if(id==="msdate"){msForm.date=e.target.value;return}
-  if(id==="projsel"){if(e.target.value==="__new"){S.tab="newproj";render()}else{S.cur=e.target.value;S.tab="main";S.filter=null;draft=null;EDIT=null;uf={q:"",about:"all"};reload()}return}
-  if(id==="teamsel"){TEAM=TEAMS.find(t=>t.id===e.target.value);S.cur=null;S.tab="main";draft=null;lastInvite=null;reload();return}
+  if(id==="projsel"){if(e.target.value==="__new"){S.tab="newproj";render()}else{S.cur=e.target.value;S.tab="main";S.filter=null;BF={who:"all",st:"all"};draft=null;EDIT=null;uf={q:"",about:"all"};reload()}return}
+  if(id==="teamsel"){TEAM=TEAMS.find(t=>t.id===e.target.value);S.cur=null;S.tab="main";BF={who:"all",st:"all"};draft=null;lastInvite=null;reload();return}
   if(id==="rfrom"&&e.target.value){R.from=e.target.value;render()}
   if(id==="rto"&&e.target.value){R.to=e.target.value;render()}
   if(id==="rscope"){R.scope=e.target.value;render()}
