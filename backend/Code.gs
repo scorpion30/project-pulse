@@ -211,6 +211,7 @@ const ACTIONS = {
       insert_('Tasks', t); log_(b.projectId, user.id, x.logTxt || ('assigned “' + t.title + '”'));
       return taskOut_(t);
     });
+    mailTasks_(user, ctx.p, made);
     return {tasks: made};
   },
   taskAction(b, user) {
@@ -376,3 +377,29 @@ function doPost(e) {
 function doGet() {
   return ContentService.createTextOutput(JSON.stringify({ok: true, app: 'Project Pulse API'})).setMimeType(ContentService.MimeType.JSON);
 }
+
+/* ---------- email alert when someone gets a task ---------- */
+const SITE_URL = 'https://scorpion30.github.io/project-pulse/';
+function esc_(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
+function mailTasks_(by, project, tasks) {
+  try {
+    const users = rows_('Users'), groups = {};
+    tasks.forEach(t => { if (t.to !== by.id) (groups[t.to] = groups[t.to] || []).push(t); });
+    Object.keys(groups).forEach(uid => {
+      const u = users.find(x => x.id === uid);
+      if (!u || !u.email || /@test\.local$/i.test(u.email) || MailApp.getRemainingDailyQuota() < 1) return;
+      const list = groups[uid], tz = Session.getScriptTimeZone();
+      const due = t => t.dueAt ? Utilities.formatDate(new Date(t.dueAt), tz, 'EEE d MMM, HH:mm') : t.due ? Utilities.formatDate(new Date(t.due + 'T12:00:00'), tz, 'EEE d MMM') : 'no date';
+      const subject = list.length > 1 ? by.name + ' gave you ' + list.length + ' new tasks · ' + project.name : 'New task from ' + by.name + ': ' + list[0].title;
+      const rows = list.map(t => '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc_(t.title) + '</b>' + (t.about ? '<br><span style="color:#6b7280;font-size:12px">' + esc_(t.about) + '</span>' : '') +
+        '</td><td style="padding:8px 10px;border-bottom:1px solid #eee;color:#b42318;white-space:nowrap">' + esc_(due(t)) + '</td></tr>').join('');
+      const html = '<div style="font-family:Arial,sans-serif;max-width:560px;color:#141b2b"><div style="font-size:13px;color:#6b7280">Project Pulse · ' + esc_(project.name) + '</div>' +
+        '<h2 style="margin:6px 0 12px">' + esc_(by.name) + ' gave you ' + (list.length > 1 ? list.length + ' new tasks' : 'a new task') + '</h2>' +
+        '<table style="border-collapse:collapse;width:100%;font-size:14px"><tr><th align="left" style="padding:6px 10px;background:#141b2b;color:#fff">Task</th><th align="left" style="padding:6px 10px;background:#141b2b;color:#fff">Due</th></tr>' + rows + '</table>' +
+        '<p style="margin:18px 0"><a href="' + SITE_URL + '" style="background:#ff5a36;color:#fff;padding:10px 18px;border-radius:99px;text-decoration:none;font-weight:bold">Open Project Pulse and tap Got it</a></p>' +
+        '<p style="font-size:12px;color:#9ca3af">You get this email because you are on the ' + esc_(project.name) + ' team in Project Pulse.</p></div>';
+      MailApp.sendEmail({to: u.email, subject: subject, htmlBody: html, name: 'Project Pulse'});
+    });
+  } catch (e) { console.log('mail failed: ' + e); }
+}
+function authorizeMail() { return 'Mail quota left today: ' + MailApp.getRemainingDailyQuota(); }

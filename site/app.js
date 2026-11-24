@@ -166,6 +166,21 @@ async function doAuth(){
 function signOut(silent){if(TOKEN&&!silent)api("logout").catch(()=>{});TOKEN=null;store.set("pulse-token",null);ME=null;authMode="in";if(!silent)toast("Signed out");renderAuth()}
 
 /* ---------- loading ---------- */
+
+/* ---------- alerts for new tasks ---------- */
+let SEEN_IDS=null;
+const canNotify=()=>"Notification" in window;
+function beep(){try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.type="sine";o.frequency.value=880;g.gain.setValueAtTime(.0001,c.currentTime);g.gain.exponentialRampToValueAtTime(.25,c.currentTime+.02);g.gain.exponentialRampToValueAtTime(.0001,c.currentTime+.5);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+.55)}catch(e){}}
+function alertNew(){if(!ME)return;
+  const mine=S.tasks.filter(k=>k.to===ME.id&&!k.seenAt&&k.by!==ME.id);
+  if(SEEN_IDS){const fresh=mine.filter(k=>!SEEN_IDS.has(k.id));if(fresh.length)notifyTasks(fresh)}
+  SEEN_IDS=new Set([...(SEEN_IDS||[]),...mine.map(k=>k.id)]);
+  document.title=(mine.length?`(${mine.length}) `:"")+"Project Pulse";}
+function notifyTasks(f){beep();const head=f.length>1?`${f.length} new tasks for you`:`New task from ${nm(f[0].by)}`,body=f.slice(0,5).map(k=>"• "+k.title+" · "+dueK(k).t).join("\n");
+  if(canNotify()&&Notification.permission==="granted"){try{const n=new Notification(head,{body,tag:"pulse-"+f[0].id,requireInteraction:true,icon:document.querySelector('link[rel="icon"]').href});n.onclick=()=>{window.focus();S.tab="main";render();n.close()}}catch(e){}}
+  toast(head+": "+f[0].title)}
+function alertBanner(){if(!canNotify()||Notification.permission!=="default")return "";
+  return `<div class="alertban"><span>🔔 Get a pop-up and a sound when someone gives you a task, even when this tab is in the background.</span><button class="btn sm go" data-act="alerts">Turn on alerts</button></div>`}
 async function boot(){
   if(!TOKEN)return renderAuth();
   try{const j=await api("me");ME=j.user;TEAMS=j.teams}catch(e){if(TOKEN)document.getElementById("view").innerHTML=`<div class="auth"><div class="panel empty">${esc(e.message)}<button class="btn go" data-act="retry" style="justify-content:center;margin-top:10px">Try again</button></div></div>`;return}
@@ -181,7 +196,7 @@ async function reload(depth){
     if(v!==WRITES_N||saving>0){if((depth||0)<3)return reload((depth||0)+1);return}
     PEOPLE=j.members;ROLE=j.role;LOGO=j.team.logo||"";TEAM.name=j.team.name||TEAM.name;PROJECTS=j.projects;INVITES=j.invites||[];S.cur=j.projectId;
     S.tasks=j.tasks||[];S.updates=j.updates||[];S.ms=j.milestones||[];S.log=j.log||[];
-    store.set("pulse-team",TEAM.id);store.set("pulse-project",S.cur);render();checkWins();
+    store.set("pulse-team",TEAM.id);store.set("pulse-project",S.cur);render();checkWins();alertNew();
   }catch(e){toast(e.message)}
 }
 function renderNoTeam(){
@@ -255,7 +270,7 @@ function renderTeam(){
   <h1>${greet}, ${esc(m.name)}.</h1>
   <p class="sub">${next?`Next up: <b>${esc(next.title)}</b> · ${dueK(next).t.toLowerCase()}.`:"Nothing open. Enjoy the calm."} ${unseen.length?`<b>${unseen.length} new</b> from your managers.`:""}</p>
   <div class="layout"><div class="stack">
-    ${warnBox(myWarnings(m.id))}
+    ${alertBanner()}${warnBox(myWarnings(m.id))}
     ${unseen.length?`<section class="inbox"><h2>New for you <span class="n">${unseen.length}</span></h2>
       ${unseen.map(k=>`<div class="nitem">${av(k.by)}<div class="tx"><b>${esc(k.title)}</b><span>${esc(nm(k.by))} · ${ago(k.at)} · ${esc(k.about||"Whole project")} · ${dueK(k).t}</span></div><button class="btn go" data-act="got" data-id="${k.id}">Got it</button></div>`).join("")}</section>`:""}
     <h2 style="margin-top:6px">My tasks <span class="n">${active.length}</span></h2>
@@ -335,7 +350,7 @@ function renderMgr(){
   <h1>Hi ${esc(m.name)}. ${stuck.length+late.length?`${stuck.length+late.length} things need you.`:"Team is moving."}</h1>
   <p class="sub">Give out tasks in the box below: write the task, tap the person, send. It lands on their screen right away.</p>
   <div class="layout"><div class="stack">
-    ${warnBox(mgrWarnings())}
+    ${alertBanner()}${warnBox(mgrWarnings())}
     <section class="composer">
       <div class="ctop"><span class="ctitle">${draft.mode==="task"?"Give out tasks":"Tell everyone"}</span><div class="seg"><button data-act="mode" data-v="task" aria-pressed="${draft.mode==="task"}">Task</button><button data-act="mode" data-v="update" aria-pressed="${draft.mode==="update"}">Update</button></div></div>
       <textarea id="ctext" rows="3" placeholder="${draft.mode==="task"?"Ahmed: revise the Tower 4 lobby ceiling by Friday\nSara: B2 parking markup tomorrow":"e.g. Client approved the new podium height"}" aria-label="Write it">${esc(draft.text)}</textarea>
@@ -751,6 +766,7 @@ document.addEventListener("click",async e=>{
       b.disabled=false;b.textContent=label;return}
     case"authmode":authMode=b.dataset.v;authErr="";renderAuth();return;
     case"signout":signOut();return;
+    case"alerts":{try{const r=await Notification.requestPermission();toast(r==="granted"?"Alerts are on. You will get a pop-up for new tasks":"Alerts are off. You can turn them on from the lock icon next to the address")}catch(e){}break}
     case"retry":document.getElementById("view").innerHTML=`<div class="loading">Loading…</div>`;boot();return;
     case"refresh":await reload();toast("Up to date");return;
     case"jointeam":{try{await api("joinTeam",{invite:document.getElementById("j-code").value});await boot()}catch(err){toast(err.message)}return}
@@ -866,5 +882,5 @@ document.addEventListener("keydown",e=>{
   if(id&&id.startsWith("ni-")&&e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();document.querySelector(`[data-act="additems"][data-ms="${id.slice(3)}"]`).click()}
 });
 /* refresh every minute while nobody is typing */
-setInterval(()=>{const a=document.activeElement;if(TOKEN&&TEAM&&!document.hidden&&!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&saving===0&&!S.open&&!EDIT&&S.tab!=="history")reload()},60000);
+setInterval(()=>{const a=document.activeElement;if(TOKEN&&TEAM&&(document.hidden||!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)))&&saving===0&&!S.open&&!EDIT&&S.tab!=="history")reload()},60000);
 boot();
