@@ -218,7 +218,7 @@ const ACTIONS = {
     const ctx = project_(user, t.projectId), mine = t.to === user.id, a = b.do;
     if (['got','start','done','stuck','unstuck'].includes(a) && !mine) throw new Error('Only the person on this task can do that');
     if (['kudos','reopen'].includes(a)) needMgr_(ctx);
-    if (a === 'got') t.seenAt = now_();
+    if (a === 'got') { t.seenAt = now_(); if (t.status === 'new') { t.status = 'doing'; if (!t.startedAt) t.startedAt = now_(); } }
     if (a === 'start') { t.status = 'doing'; if (!t.seenAt) t.seenAt = now_(); if (!t.startedAt) t.startedAt = now_(); }
     if (a === 'done') { t.status = 'done'; t.doneAt = Math.min(Number(b.doneAt) || now_(), now_()); }
     if (a === 'stuck') { t.status = 'stuck'; t.stuckOn = clean_(b.stuckOn, 60); t.stuckNote = clean_(b.stuckNote, 200); }

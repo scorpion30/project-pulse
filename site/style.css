@@ -334,3 +334,4 @@ input[type=text],input[type=date],select,textarea{font:inherit;border:1px solid 
 .numin{width:58px;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 #dduetime{font:inherit;font-size:14px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .mini .tag.due{white-space:normal;max-width:100%;line-height:1.35}
+.colbody{display:flex;flex-direction:column;gap:8px;max-height:540px;overflow-y:auto;padding-right:2px;scrollbar-width:thin}

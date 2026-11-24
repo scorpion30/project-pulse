@@ -36,6 +36,7 @@ async function send(action,body,okMsg){
 const P=id=>PEOPLE.find(p=>p.id===id);
 const me=()=>P(ME.id)||{id:ME.id,name:ME.name,mgr:ROLE==="mgr",color:"#141b2b"};
 const team=()=>PEOPLE.filter(p=>!p.mgr);
+const assignees=()=>{const m=me();return m.mgr?[...team(),m]:team()};
 function dstr(ms){const d=new Date(ms);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function midnight(ms){const d=new Date(ms);d.setHours(0,0,0,0);return d.getTime()}
 const daysTo=iso=>Math.round((midnight(new Date(iso+"T12:00").getTime())-midnight(Date.now()))/DAY);
@@ -66,7 +67,7 @@ function dueK(k){if(!k.dueAt)return dueInfo(k.due);const left=k.dueAt-Date.now()
   if(left<0)return{c:"late",t:`${durTxt(left)} late`};return{c:left<24*H?"today":"",t:`⏱ ${durTxt(left)} left · by ${shortWhen(k.dueAt)}`}}
 function tline(k){const s=[`Given ${shortWhen(k.at)}`];
   if(k.seenAt)s.push(`<b>Got it ${shortWhen(k.seenAt)}</b> <i>(${durTxt(k.seenAt-k.at)} after)</i>`);else s.push(`<b class="no">Not opened yet</b>`);
-  if(k.startedAt)s.push(`Started ${shortWhen(k.startedAt)}`);if(k.status==="done"&&k.doneAt)s.push(`Done ${shortWhen(k.doneAt)}`);
+  if(k.startedAt&&Math.abs(k.startedAt-(k.seenAt||0))>6e4)s.push(`Started ${shortWhen(k.startedAt)}`);if(k.status==="done"&&k.doneAt)s.push(`Done ${shortWhen(k.doneAt)}`);
   return `<div class="tline">${s.join(" → ")}</div>`}
 const fmtDue=(due,at)=>at?shortWhen(at):due?new Date(due+"T12:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"no date";
 const dueCell=k=>k.dueAt?new Date(k.dueAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})+" "+hm(k.dueAt):k.due?new Date(k.due+"T12:00").toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):"";
@@ -280,7 +281,7 @@ const draftLines=()=>draft.text.split("\n").map(s=>s.trim()).filter(Boolean);
 const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
 const cleanTitle=(text,to)=>{const n=P(to)?.name;return (n?text.replace(new RegExp("^"+reEsc(n)+"\\s*[,:\\-–]?\\s*","i"),""):text).replace(/^./,c=>c.toUpperCase())};
 function parseDraft(t){
-  const r={};const first=team().find(p=>new RegExp("^\\s*"+reEsc(p.name.split(" ")[0])+"\\b","i").test(t))||team().find(p=>new RegExp("\\b"+reEsc(p.name.split(" ")[0])+"\\b","i").test(t));if(first)r.to=first.id;
+  const r={};const first=assignees().find(p=>new RegExp("^\\s*"+reEsc(p.name.split(" ")[0])+"\\b","i").test(t))||assignees().find(p=>new RegExp("\\b"+reEsc(p.name.split(" ")[0])+"\\b","i").test(t));if(first)r.to=first.id;
   const base=new Date();let off=null;
   if(/\b(today|tonight|asap)\b/i.test(t))off=0;else if(/\btomorrow\b/i.test(t))off=1;else if(/\bnext week\b/i.test(t))off=7;
   else{const days=["sun","mon","tue","wed","thu","fri","sat"];const m=t.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/i);if(m)off=(days.indexOf(m[1].toLowerCase())-base.getDay()+7)%7||7}
@@ -300,7 +301,7 @@ function bulkChips(){
   return `<div class="bulkhead"><b>${ls.length} tasks</b> · one per line. Check who gets each one:</div>
    ${ls.map((l,i)=>{const r=parseDraft(l);const to=draft.lineTo[i]||r.to||"";const d=r.due?dueInfo(r.due).t:"Due in 3 days";
      return `<div class="brow">${to?av(to,1):`<span class="av sm" style="background:var(--line);color:var(--muted)">?</span>`}<span class="bt">${esc(to?cleanTitle(l,to):l)}</span>
-       <select data-line="${i}" aria-label="Who gets line ${i+1}"><option value="">Pick person</option>${team().map(p=>`<option value="${p.id}" ${p.id===to?"selected":""}>${esc(p.name)}</option>`).join("")}</select>
+       <select data-line="${i}" aria-label="Who gets line ${i+1}"><option value="">Pick person</option>${assignees().map(p=>`<option value="${p.id}" ${p.id===to?"selected":""}>${esc(p.name)}</option>`).join("")}</select>
        ${r.about?aboutTag(r.about):""}<span class="tag due">${d}</span></div>`}).join("")}
    <div class="crow"><span class="lbl">For</span>${msSelect("dms")}<span class="hint">All these tasks count toward this delivery.</span></div>`;
 }
@@ -309,8 +310,8 @@ function composerChips(){
   if(draft.mode==="update")return "";
   if(draftLines().length>1)return bulkChips();
   return `
-   <div class="crow"><span class="lbl">Who</span>${team().map(p=>`<button class="pick" data-act="dto" data-id="${p.id}" aria-pressed="${draft.to===p.id}" aria-label="Assign to ${esc(p.name)}" title="${esc(p.name)}">${av(p.id)}</button>`).join("")||`<span class="hint">No team members yet.</span>`}
-     ${inviteLink}${draft.to?`<span class="chip ${auto("to")?"auto":""}" style="cursor:default">For ${esc(nm(draft.to))}${auto("to")?" · picked from text":""}</span>`:""}</div>
+   <div class="crow"><span class="lbl">Who</span>${assignees().map(p=>`<button class="pick" data-act="dto" data-id="${p.id}" aria-pressed="${draft.to===p.id}" aria-label="Assign to ${esc(p.name)}" title="${esc(p.id===ME.id?"Me ("+p.name+")":p.name)}">${av(p.id)}</button>`).join("")||`<span class="hint">No team members yet.</span>`}
+     ${inviteLink}${draft.to?`<span class="chip ${auto("to")?"auto":""}" style="cursor:default">For ${esc(draft.to===ME.id?"me":nm(draft.to))}${auto("to")?" · picked from text":""}</span>`:""}</div>
    <div class="crow"><span class="lbl">Due</span>${DUEOPTS().map(([l,v])=>`<button class="chip ${auto("due")&&draft.due===v?"auto":""}" data-act="ddue" data-v="${v}" aria-pressed="${draft.due===v&&!auto("due")}">${l}</button>`).join("")}<input type="date" id="dduedate" aria-label="Other date" value="${draft.due&&!DUEOPTS().some(o=>o[1]===draft.due)?draft.due:""}"><span class="hint">at</span><input type="time" id="dduetime" aria-label="Time (optional)" value="${draft.time||""}"></div>
    <div class="crow"><span class="lbl">Finish in</span>${FINOPTS.map(([l,h])=>`<button class="chip" data-act="dfin" data-h="${h}" aria-pressed="${draft.finH===h}">${l}</button>`).join("")}
      <input type="number" min="0" max="90" id="dfd" class="numin" placeholder="0" value="${draft.finH?Math.floor(draft.finH/24)||"":""}" aria-label="Days"><span class="hint">days</span>
@@ -325,7 +326,7 @@ function renderMgr(){
   const stuck=t.filter(k=>k.status==="stuck"),late=t.filter(isLate),unseen=t.filter(k=>!k.seenAt&&now-k.at>12*H),fin=t.filter(k=>k.status==="done"&&now-k.doneAt<2*DAY&&!k.kudos.includes(m.id));
   const match=k=>!S.filter||(S.filter==="stuck"&&k.status==="stuck")||(S.filter==="late"&&isLate(k))||(S.filter==="unseen"&&!k.seenAt&&now-k.at>12*H)||(S.filter==="fin"&&fin.includes(k));
   const col=(st,title)=>{const list=t.filter(k=>k.status===st&&(st!=="done"||now-k.doneAt<7*DAY)).sort((a,b)=>st==="done"?b.doneAt-a.doneAt:(a.due||"9").localeCompare(b.due||"9"));
-    return `<div class="col"><h3>${title}<span class="hint">${list.length}</span></h3>${list.map(k=>miniCard(k,match(k))).join("")||`<div class="hint" style="padding:8px">Nothing here</div>`}</div>`};
+    return `<div class="col"><h3>${title}<span class="hint">${list.length}</span></h3><div class="colbody">${list.map(k=>miniCard(k,match(k))).join("")||`<div class="hint" style="padding:8px">Nothing here</div>`}</div></div>`};
   const updates=S.updates.slice().sort((a,b)=>b.at-a.at).slice(0,3);
   return `
   <h1>Hi ${esc(m.name)}. ${stuck.length+late.length?`${stuck.length+late.length} things need you.`:"Team is moving."}</h1>
@@ -361,7 +362,7 @@ function renderMgr(){
 const isEd=(kind,id,j)=>EDIT&&EDIT.kind===kind&&EDIT.id===id&&(j===undefined||EDIT.j===j);
 const delBtn=(act,key,attrs,label)=>`<button class="btn sm danger" data-act="${act}" ${attrs}>${CONFIRM===key?"Yes, delete":(label||"Delete")}</button>`;
 function taskEditor(k){
-  const who=PEOPLE.filter(p=>!p.mgr||p.id===k.to);
+  const who=PEOPLE.filter(p=>!p.mgr||p.id===k.to||p.id===ME.id);
   return `<div class="editbox">
     <label>Task<input id="et-title" value="${esc(k.title)}"></label>
     <div class="erow"><label>Who<select id="et-to">${who.map(p=>`<option value="${p.id}" ${p.id===k.to?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
@@ -376,8 +377,10 @@ function miniCard(k,on){
   if(isEd("task",k.id))return `<div class="mini">${taskEditor(k)}</div>`;
   const m=me(),d=dueK(k);let a="";
   if(k.status==="stuck")a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(k.stuckOn)}">Chase ${esc(k.stuckOn)}</button>`;
-  if(k.status==="new"&&!k.seenAt)a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(nm(k.to))}">Nudge ${esc(nm(k.to))}</button>`;
-  if(k.status==="done")a=k.kudos.includes(m.id)?`<span class="kudo">👏 Sent</span>`:`<button class="btn sm go" data-act="kudos" data-id="${k.id}">👏 Kudos</button><button class="btn sm quiet" data-act="reopen" data-id="${k.id}">Reopen</button>`;
+  if(k.status==="new"&&!k.seenAt&&k.to!==ME.id)a=`<button class="btn sm" data-act="nudge" data-id="${k.id}" data-to="${esc(nm(k.to))}">Nudge ${esc(nm(k.to))}</button>`;
+  if(k.to===ME.id&&k.status==="new")a=`<button class="btn sm go" data-act="got" data-id="${k.id}">Got it</button>`;
+  if(k.to===ME.id&&(k.status==="doing"||k.status==="stuck"))a=`<button class="btn sm teal" data-act="done" data-id="${k.id}" data-w="now">Mark done</button>`;
+  if(k.status==="done"&&k.to!==ME.id)a=k.kudos.includes(m.id)?`<span class="kudo">👏 Sent</span>`:`<button class="btn sm go" data-act="kudos" data-id="${k.id}">👏 Kudos</button><button class="btn sm quiet" data-act="reopen" data-id="${k.id}">Reopen</button>`;
   return `<div class="mini ${on?"":"dim"}">
     <div class="row">${av(k.to,1)}<b style="color:var(--ink)">${esc(nm(k.to))}</b><span style="margin-left:auto">${aboutTag(k.about)}</span></div>
     <div class="t">${esc(k.title)}</div>
@@ -726,7 +729,7 @@ document.addEventListener("click",async e=>{
     case"refresh":await reload();toast("Up to date");return;
     case"jointeam":{try{await api("joinTeam",{invite:document.getElementById("j-code").value});await boot()}catch(err){toast(err.message)}return}
     case"tab":S.tab=b.dataset.t;window.scrollTo(0,0);break;
-    case"got":k.seenAt=Date.now();logLocal(`got “${k.title}”`);taskDo(k,"got",null,`got “${k.title}”`,`${nm(k.by)} can see you've got it`);break;
+    case"got":k.seenAt=Date.now();if(k.status==="new"){k.status="doing";if(!k.startedAt)k.startedAt=k.seenAt}logLocal(`got “${k.title}” and started`);taskDo(k,"got",null,`got “${k.title}” and started`,k.by===ME.id?"On it. It's in Doing now":`${nm(k.by)} can see you've started`);break;
     case"start":k.status="doing";if(!k.seenAt)k.seenAt=Date.now();if(!k.startedAt)k.startedAt=Date.now();taskDo(k,"start",null,`started “${k.title}”`,"Started. Good luck!");break;
     case"open":S.open=S.open&&S.open.id===k.id&&S.open.kind===b.dataset.kind?null:{id:k.id,kind:b.dataset.kind};break;
     case"done":{let at=Date.now();const w=b.dataset.w;
