@@ -66,7 +66,7 @@ const shortWhen=ms=>dayWord(ms)+" "+hm(ms);
 function dueK(k){if(!k.dueAt)return dueInfo(k.due);const left=k.dueAt-Date.now();
   if(left<0)return{c:"late",t:`${durTxt(left)} late`};return{c:left<24*H?"today":"",t:`⏱ ${durTxt(left)} left · by ${shortWhen(k.dueAt)}`}}
 function tline(k){const s=[`Given ${shortWhen(k.at)}`];
-  if(k.seenAt)s.push(`<b>Got it ${shortWhen(k.seenAt)}</b> <i>(${durTxt(k.seenAt-k.at)} after)</i>`);else s.push(`<b class="no">Not opened yet</b>`);
+  if(k.seenAt)s.push(`<b>${k.startedAt&&Math.abs(k.startedAt-k.seenAt)<=6e4?"Got it &amp; started":"Got it"} ${shortWhen(k.seenAt)}</b> <i>(${durTxt(k.seenAt-k.at)} after)</i>`);else s.push(`<b class="no">Not opened yet</b>`);
   if(k.startedAt&&Math.abs(k.startedAt-(k.seenAt||0))>6e4)s.push(`Started ${shortWhen(k.startedAt)}`);if(k.status==="done"&&k.doneAt)s.push(`Done ${shortWhen(k.doneAt)}`);
   return `<div class="tline">${s.join(" → ")}</div>`}
 const fmtDue=(due,at)=>at?shortWhen(at):due?new Date(due+"T12:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"}):"no date";
