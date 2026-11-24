@@ -368,9 +368,9 @@ function renderMgr(){
   <aside class="rail">
     <div class="panel"><h2>Next delivery</h2>${nextDelivery()}</div>
     ${trophyShelf()}
-    <div class="panel"><h2>Team today</h2>
+    <details class="panel teamtoday" ${store.get("pulse-teamtoday")==="open"?"open":""}><summary><h2>Team today <span class="hint" style="font-weight:500">${team().length} people${t.filter(k=>k.status==="stuck").length?` · <span style="color:var(--red)">${t.filter(k=>k.status==="stuck").length} stuck</span>`:""}</span><span class="ttav">${team().slice(0,6).map(p=>av(p.id,1)).join("")}</span></h2></summary><div class="ttlist">
       ${team().map(p=>{const mine=t.filter(k=>k.to===p.id&&k.status!=="done");const cur=mine.find(k=>k.status==="stuck")||mine.find(isLate)||mine.find(k=>k.status==="doing");
-        return `<div class="upd">${av(p.id)}<div class="tx"><b>${esc(p.name)}</b> <span class="hint">· ${mine.length} open</span><div class="meta">${cur?(cur.status==="stuck"?`<span class="note">Stuck: ${esc(cur.title)}</span>`:isLate(cur)?`<span class="note">Late: ${esc(cur.title)}</span>`:`Working on: ${esc(cur.title)}`):"Free for a new task"}</div></div></div>`}).join("")||`<div class="hint">No team members yet. ${inviteLink}</div>`}</div>
+        return `<div class="upd">${av(p.id)}<div class="tx"><b>${esc(p.name)}</b> <span class="hint">· ${mine.length} open</span><div class="meta">${cur?(cur.status==="stuck"?`<span class="note">Stuck: ${esc(cur.title)}</span>`:isLate(cur)?`<span class="note">Late: ${esc(cur.title)}</span>`:`Working on: ${esc(cur.title)}`):"Free for a new task"}</div></div></div>`}).join("")||`<div class="hint">No team members yet. ${inviteLink}</div>`}</div></details>
     <div class="panel"><h2>Latest updates <button class="linkbtn" data-act="tab" data-t="updates" style="margin-left:auto">See all</button></h2>
       ${updates.map(u=>{const o=u.seenBy.filter(id=>id!==u.by&&P(id));return `<div class="upd">${av(u.by,1)}<div class="tx">${esc(u.text)}<div class="meta">${esc(nm(u.by))} · ${ago(u.at)}<span class="seen">${o.map(id=>av(id,1)).join("")}</span><span>Seen by ${o.length} of ${Math.max(PEOPLE.length-1,0)}</span></div></div></div>`}).join("")||`<div class="hint">No updates yet.</div>`}</div>
   </aside></div>
@@ -859,6 +859,7 @@ document.addEventListener("input",e=>{
   if(id==="ctext"){draft.text=e.target.value;const r=parseDraft(draft.text);["to","due","about"].forEach(f=>{if(!draft.man[f])draft[f]=r[f]||(f==="about"?"":null)});reChips();
     const n=draftLines().length;if(draft.mode==="task")document.getElementById("postbtn").textContent=n>1?`Send ${n} tasks`:"Send task"}
 });
+document.addEventListener("toggle",e=>{if(e.target.classList&&e.target.classList.contains("teamtoday"))store.set("pulse-teamtoday",e.target.open?"open":"closed")},true);
 document.addEventListener("change",e=>{
   const id=e.target.id;
   if(e.target.dataset&&e.target.dataset.line!==undefined){draft.lineTo[+e.target.dataset.line]=e.target.value;reChips();return}
