@@ -348,3 +348,5 @@ input[type=text],input[type=date],select,textarea{font:inherit;border:1px solid 
 .sendbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
 .additem textarea{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);resize:vertical;width:100%;box-sizing:border-box}
 .additem .crow input[type=text]{flex:1}
+.mgrid{grid-template-columns:1fr !important}
+.irow label{flex:1 1 220px}
